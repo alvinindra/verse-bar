@@ -241,95 +241,17 @@ struct PopoverView: View {
         case next
         case previous
     }
-    
+
     private func triggerPlayerAction(_ action: PlayerAction) {
-        // Send the corresponding macOS media key. Routes to whatever has
-        // registered with the system Now Playing service — works whether the
-        // source is YTM in a browser, YTMDesktop, Apple Music, etc.
         switch action {
-        case .togglePlayPause: MediaKeys.send(MediaKeys.play)
-        case .next:            MediaKeys.send(MediaKeys.next)
-        case .previous:        MediaKeys.send(MediaKeys.previous)
+        case .togglePlayPause: playbackEngine.togglePlayPause()
+        case .next:            playbackEngine.nextTrack()
+        case .previous:        playbackEngine.previousTrack()
         }
-
-        // Also run JS in any open YTM browser tab as a belt-and-suspenders
-        // path — handles the case where the browser tab isn't the current
-        // Now Playing target (e.g. a different audio app has focus).
-        let jsCommand: String
-        switch action {
-        case .togglePlayPause:
-            jsCommand = "(function(){var v=document.querySelector('video');if(!v)return;if(v.paused){v.play().catch(function(){});}else{v.pause();}})()"
-        case .next:
-            jsCommand = "(function(){var b=document.querySelector('.next-button')||document.querySelector('[aria-label=\\\"Next\\\"]');if(b)b.click();})()"
-        case .previous:
-            jsCommand = "(function(){var b=document.querySelector('.previous-button')||document.querySelector('[aria-label=\\\"Previous\\\"]');if(b)b.click();})()"
-        }
-        runJSInBrowsers(jsCommand)
     }
 
-    /// Seek active YTM browser tab to the given playback time (in seconds).
-    /// After the seek lands, PlaybackEngine's next poll picks up the new
-    /// currentTime and LyricsService re-resolves the active line naturally.
     private func seekPlayer(to seconds: TimeInterval) {
-        let clamped = max(0.0, seconds)
-        // Snap the lyric highlight immediately so the tap feels responsive;
-        // playback engine's next poll will reconcile.
-        if let track = playbackEngine.currentTrack {
-            var updated = track
-            updated.elapsedTime = clamped
-            updated.lastUpdated = Date()
-            playbackEngine.currentTrack = updated
-        }
-
-        let js = "(function(){var v=document.querySelector('video');if(v){try{v.currentTime=\(clamped);}catch(e){}}})()"
-        runJSInBrowsers(js)
-    }
-
-    private func runJSInBrowsers(_ jsCommand: String) {
-        let arcScript = """
-        tell application "Arc"
-            repeat with w in windows
-                try
-                    repeat with t in tabs of w
-                        if URL of t contains "music.youtube.com" then
-                            execute t javascript "\(jsCommand)"
-                            return
-                        end if
-                    end repeat
-                end try
-            end repeat
-        end tell
-        """
-
-        let chromeScript = """
-        tell application "Google Chrome"
-            repeat with w in windows
-                repeat with t in tabs of w
-                    if URL of t contains "music.youtube.com" then
-                        execute t javascript "\(jsCommand)"
-                        return
-                    end if
-                end repeat
-            end repeat
-        end tell
-        """
-
-        let safariScript = """
-        tell application "Safari"
-            repeat with w in windows
-                repeat with t in tabs of w
-                    if URL of t contains "music.youtube.com" then
-                        do JavaScript "\(jsCommand)" in t
-                        return
-                    end if
-                end repeat
-            end repeat
-        end tell
-        """
-
-        AppleScriptRunner.run(arcScript) { _ in }
-        AppleScriptRunner.run(chromeScript) { _ in }
-        AppleScriptRunner.run(safariScript) { _ in }
+        playbackEngine.seek(to: seconds)
     }
 }
 

@@ -11,10 +11,11 @@ import Combine
 /// ignored even when `addSystemTrayItem:` reports success.
 final class PopoverHostingController: NSHostingController<PopoverView>, NSTouchBarDelegate {
 
-    private let lyricId = NSTouchBarItem.Identifier("com.versebar.popover.touchbar.lyric")
-    private let iconId  = NSTouchBarItem.Identifier("com.versebar.popover.touchbar.icon")
+    private let lyricId    = NSTouchBarItem.Identifier("com.versebar.popover.touchbar.lyric")
+    private let controlsId = NSTouchBarItem.Identifier("com.versebar.popover.touchbar.controls")
 
     private weak var lyricLabel: NSTextField?
+    private weak var playPauseButton: NSButton?
 
     private var playbackEngine = PlaybackEngine.shared
     private var lyricsService = LyricsService.shared
@@ -24,8 +25,8 @@ final class PopoverHostingController: NSHostingController<PopoverView>, NSTouchB
         let bar = NSTouchBar()
         bar.delegate = self
         bar.customizationIdentifier = NSTouchBar.CustomizationIdentifier("com.versebar.popover.touchbar")
-        bar.defaultItemIdentifiers = [lyricId, .flexibleSpace, iconId]
-        bar.customizationAllowedItemIdentifiers = [lyricId, iconId]
+        bar.defaultItemIdentifiers = [lyricId, .flexibleSpace, controlsId]
+        bar.customizationAllowedItemIdentifiers = [lyricId, controlsId]
         return bar
     }
 
@@ -55,8 +56,8 @@ final class PopoverHostingController: NSHostingController<PopoverView>, NSTouchB
         switch identifier {
         case lyricId:
             return makeLyricItem()
-        case iconId:
-            return makeIconItem()
+        case controlsId:
+            return makeControlsItem()
         default:
             return nil
         }
@@ -88,21 +89,67 @@ final class PopoverHostingController: NSHostingController<PopoverView>, NSTouchB
         return item
     }
 
-    private func makeIconItem() -> NSTouchBarItem {
-        let image = NSImage(systemSymbolName: "music.note", accessibilityDescription: "Verse Bar")
-            ?? NSImage()
+    private func makeControlsItem() -> NSTouchBarItem {
+        let prev = makeMediaButton(symbol: "backward.fill",
+                                   accessibility: "Previous track",
+                                   action: #selector(handlePrevious))
+        let playPause = makeMediaButton(symbol: currentPlayPauseSymbol(),
+                                        accessibility: "Play or pause",
+                                        action: #selector(handlePlayPause))
+        playPause.contentTintColor = .systemBlue
+        self.playPauseButton = playPause
+        let next = makeMediaButton(symbol: "forward.fill",
+                                   accessibility: "Next track",
+                                   action: #selector(handleNext))
+
+        let stack = NSStackView(views: [prev, playPause, next])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 4
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+
+        let item = NSCustomTouchBarItem(identifier: controlsId)
+        item.view = stack
+        item.customizationLabel = "Playback Controls"
+        return item
+    }
+
+    private func makeMediaButton(symbol: String, accessibility: String, action: Selector) -> NSButton {
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: accessibility) ?? NSImage()
         image.isTemplate = true
 
-        let imageView = NSImageView(image: image)
-        imageView.contentTintColor = .systemBlue
-        imageView.imageScaling = .scaleProportionallyDown
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        let button = NSButton(image: image, target: self, action: action)
+        button.bezelStyle = .texturedRounded
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
+        button.setAccessibilityLabel(accessibility)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.widthAnchor.constraint(equalToConstant: 56).isActive = true
+        return button
+    }
 
-        let item = NSCustomTouchBarItem(identifier: iconId)
-        item.view = imageView
-        item.customizationLabel = "Verse Bar Icon"
-        return item
+    private func currentPlayPauseSymbol() -> String {
+        let isPaused = playbackEngine.currentTrack?.isPaused ?? true
+        return isPaused ? "play.fill" : "pause.fill"
+    }
+
+    private func refreshPlayPauseIcon() {
+        guard let button = playPauseButton else { return }
+        let image = NSImage(systemSymbolName: currentPlayPauseSymbol(), accessibilityDescription: "Play or pause")
+        image?.isTemplate = true
+        button.image = image
+    }
+
+    @objc private func handlePlayPause() {
+        playbackEngine.togglePlayPause()
+    }
+
+    @objc private func handleNext() {
+        playbackEngine.nextTrack()
+    }
+
+    @objc private func handlePrevious() {
+        playbackEngine.previousTrack()
     }
 
     private func bindLyricUpdates() {
@@ -126,6 +173,7 @@ final class PopoverHostingController: NSHostingController<PopoverView>, NSTouchB
 
     private func refreshLabel() {
         lyricLabel?.stringValue = currentText()
+        refreshPlayPauseIcon()
     }
 
     private func currentText() -> String {
