@@ -1,0 +1,516 @@
+import Foundation
+import Combine
+import UserNotifications
+
+class PlaybackEngine: ObservableObject {
+    static let shared = PlaybackEngine()
+    
+    @Published var currentTrack: Track?
+    
+    private var timer: Timer?
+    private let settings = AppSettings.shared
+    private var isPolling = false
+    
+    // JavaScript that extracts everything from YTM DOM in one call
+    // Uses ONLY single quotes to be safe inside AppleScript double-quoted strings
+    // Returns: title|||artist|||currentTime|||duration|||paused
+    private static func makeYTMExtractionJS() -> String {
+        return """
+        (function(){
+            var v = document.querySelector('video');
+            if (!v) return '';
+            var titleEl = document.querySelector('yt-formatted-string.title.style-scope.ytmusic-player-bar')
+                       || document.querySelector('.title.style-scope.ytmusic-player-bar')
+                       || document.querySelector('ytmusic-player-bar .title');
+            var artistEl = document.querySelector('yt-formatted-string.byline.style-scope.ytmusic-player-bar a')
+                        || document.querySelector('.byline.style-scope.ytmusic-player-bar a')
+                        || document.querySelector('ytmusic-player-bar .byline a')
+                        || document.querySelector('yt-formatted-string.byline.style-scope.ytmusic-player-bar')
+                        || document.querySelector('.byline.style-scope.ytmusic-player-bar');
+            var title = titleEl ? titleEl.textContent.trim() : '';
+            var artist = artistEl ? artistEl.textContent.trim() : '';
+            if (!title && document.title) {
+                var dt = document.title.replace(/ - YouTube Music$/, '').replace(/ [|] YouTube Music$/, '');
+                if (dt !== 'YouTube Music' && dt !== 'YouTube') {
+                    var parts = dt.split(' - ');
+                    if (parts.length >= 2) { title = parts[0].trim(); artist = parts.slice(1).join(' - ').trim(); }
+                    else { title = dt.trim(); }
+                }
+            }
+            var ct = v.currentTime || 0;
+            var dur = v.duration || 0;
+            var paused = v.paused;
+            return title + '|||' + artist + '|||' + ct + '|||' + dur + '|||' + paused;
+        })()
+        """
+    }
+    
+    // Simplified JS for regular YouTube (non-music) pages
+    private static func makeYTExtractionJS() -> String {
+        return """
+        (function(){
+            var v = document.querySelector('video');
+            if (!v) return '';
+            var titleEl = document.querySelector('h1.ytd-watch-metadata yt-formatted-string')
+                       || document.querySelector('#info-contents h1 yt-formatted-string')
+                       || document.querySelector('h1.title');
+            var channelEl = document.querySelector('#owner #channel-name a')
+                         || document.querySelector('ytd-channel-name a')
+                         || document.querySelector('#upload-info a');
+            var title = titleEl ? titleEl.textContent.trim() : '';
+            var artist = channelEl ? channelEl.textContent.trim() : '';
+            if (!title) {
+                var dt = document.title.replace(/ - YouTube$/, '').replace(/ [|] YouTube$/, '');
+                if (dt !== 'YouTube') title = dt.trim();
+            }
+            var ct = v.currentTime || 0;
+            var dur = v.duration || 0;
+            var paused = v.paused;
+            return title + '|||' + artist + '|||' + ct + '|||' + dur + '|||' + paused;
+        })()
+        """
+    }
+    
+    /// Escape a JavaScript string for embedding inside an AppleScript double-quoted string.
+    /// AppleScript only recognizes \" and \\ as escape sequences.
+    private static func escapeForAppleScript(_ js: String) -> String {
+        return js
+            .replacingOccurrences(of: "\\", with: "\\\\")  // Escape backslashes first
+            .replacingOccurrences(of: "\"", with: "\\\"")  // Then escape double quotes
+    }
+    
+    private init() {
+        startPolling()
+    }
+    
+    func startPolling() {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            self?.poll()
+        }
+        // Also trigger first poll immediately
+        poll()
+        Logger.info("Playback Engine polling started.", category: "playback")
+    }
+    
+    func stopPolling() {
+        timer?.invalidate()
+        timer = nil
+        Logger.info("Playback Engine polling stopped.", category: "playback")
+    }
+    
+    private func poll() {
+        guard !isPolling else { return }
+        isPolling = true
+        
+        let sources: [(Bool, String, (@escaping (Bool) -> Void) -> Void)] = [
+            (settings.trackingArc, "Arc", { self.pollArc(completion: $0) }),
+            (settings.trackingChrome, "Chrome", { self.pollChrome(completion: $0) }),
+            (settings.trackingSafari, "Safari", { self.pollSafari(completion: $0) }),
+            (settings.trackingYTMDesktop, "YTMDesktop", { self.pollYTMDesktop(completion: $0) })
+        ]
+        
+        func trySource(at index: Int) {
+            if index >= sources.count {
+                DispatchQueue.main.async {
+                    if self.currentTrack != nil {
+                        self.currentTrack = nil
+                    }
+                    self.isPolling = false
+                }
+                return
+            }
+            
+            let (enabled, name, pollFunc) = sources[index]
+            if enabled {
+                pollFunc { [weak self] success in
+                    if success {
+                        Logger.info("✅ Source \(name): track found", category: "playback")
+                        self?.isPolling = false
+                    } else {
+                        trySource(at: index + 1)
+                    }
+                }
+            } else {
+                trySource(at: index + 1)
+            }
+        }
+        
+        trySource(at: 0)
+    }
+    
+    // MARK: - YouTube Music Desktop App API
+    private func pollYTMDesktop(completion: @escaping (Bool) -> Void) {
+        guard let url = URL(string: "http://localhost:9863/query") else {
+            completion(false)
+            return
+        }
+        
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 0.8
+        let session = URLSession(configuration: config)
+        
+        let task = session.dataTask(with: url) { [weak self] data, response, error in
+            guard let self = self else { return }
+            
+            if error != nil {
+                completion(false)
+                return
+            }
+            
+            guard let data = data else {
+                completion(false)
+                return
+            }
+            
+            do {
+                let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
+                guard let player = json?["player"] as? [String: Any],
+                      let trackDict = json?["track"] as? [String: Any],
+                      let hasSong = player["hasSong"] as? Bool, hasSong else {
+                    completion(false)
+                    return
+                }
+                
+                let title = trackDict["title"] as? String ?? "Unknown Title"
+                let artist = trackDict["author"] as? String ?? "Unknown Artist"
+                let isPaused = player["isPaused"] as? Bool ?? true
+                let duration = player["duration"] as? Double ?? 0.0
+                let elapsed = player["seekbarCurrentPosition"] as? Double ?? 0.0
+                
+                DispatchQueue.main.async {
+                    self.updateTrack(title: title, artist: artist, duration: duration, elapsed: elapsed, isPaused: isPaused, isEstimatedProgress: false)
+                    completion(true)
+                }
+            } catch {
+                completion(false)
+            }
+        }
+        task.resume()
+    }
+    
+    // MARK: - Arc Browser
+    private func pollArc(completion: @escaping (Bool) -> Void) {
+        let escapedJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTMExtractionJS())
+        let escapedYTJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTExtractionJS())
+        
+        let script = """
+        tell application "Arc"
+            repeat with w in windows
+                try
+                    repeat with t in tabs of w
+                        try
+                            set tabURL to URL of t
+                            if tabURL contains "music.youtube.com" then
+                                try
+                                    set result to execute t javascript "\(escapedJS)"
+                                    if result is not "" then
+                                        return "YTM|||" & result
+                                    end if
+                                on error
+                                    set tabTitle to title of t
+                                    return "TITLE|||" & tabTitle
+                                end try
+                            else if tabURL contains "youtube.com/watch" then
+                                try
+                                    set result to execute t javascript "\(escapedYTJS)"
+                                    if result is not "" then
+                                        return "YT|||" & result
+                                    end if
+                                on error
+                                    set tabTitle to title of t
+                                    return "TITLE|||" & tabTitle
+                                end try
+                            end if
+                        end try
+                    end repeat
+                end try
+            end repeat
+        end tell
+        return ""
+        """
+        
+        AppleScriptRunner.run(script) { [weak self] result in
+            self?.handleJSResult(result, completion: completion)
+        }
+    }
+    
+    // MARK: - Google Chrome
+    private func pollChrome(completion: @escaping (Bool) -> Void) {
+        let escapedJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTMExtractionJS())
+        let escapedYTJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTExtractionJS())
+        
+        let script = """
+        tell application "Google Chrome"
+            repeat with w in windows
+                try
+                    repeat with t in tabs of w
+                        try
+                            set tabURL to URL of t
+                            if tabURL contains "music.youtube.com" then
+                                try
+                                    set result to execute t javascript "\(escapedJS)"
+                                    if result is not "" then
+                                        return "YTM|||" & result
+                                    end if
+                                on error
+                                    set tabTitle to title of t
+                                    return "TITLE|||" & tabTitle
+                                end try
+                            else if tabURL contains "youtube.com/watch" then
+                                try
+                                    set result to execute t javascript "\(escapedYTJS)"
+                                    if result is not "" then
+                                        return "YT|||" & result
+                                    end if
+                                on error
+                                    set tabTitle to title of t
+                                    return "TITLE|||" & tabTitle
+                                end try
+                            end if
+                        end try
+                    end repeat
+                end try
+            end repeat
+        end tell
+        return ""
+        """
+        
+        AppleScriptRunner.run(script) { [weak self] result in
+            self?.handleJSResult(result, completion: completion)
+        }
+    }
+    
+    // MARK: - Safari
+    private func pollSafari(completion: @escaping (Bool) -> Void) {
+        let escapedJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTMExtractionJS())
+        let escapedYTJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTExtractionJS())
+        
+        let script = """
+        tell application "Safari"
+            repeat with w in windows
+                try
+                    repeat with t in tabs of w
+                        try
+                            set tabURL to URL of t
+                            if tabURL contains "music.youtube.com" then
+                                try
+                                    set result to do JavaScript "\(escapedJS)" in t
+                                    if result is not "" then
+                                        return "YTM|||" & result
+                                    end if
+                                on error
+                                    set tabTitle to name of t
+                                    return "TITLE|||" & tabTitle
+                                end try
+                            else if tabURL contains "youtube.com/watch" then
+                                try
+                                    set result to do JavaScript "\(escapedYTJS)" in t
+                                    if result is not "" then
+                                        return "YT|||" & result
+                                    end if
+                                on error
+                                    set tabTitle to name of t
+                                    return "TITLE|||" & tabTitle
+                                end try
+                            end if
+                        end try
+                    end repeat
+                end try
+            end repeat
+        end tell
+        return ""
+        """
+        
+        AppleScriptRunner.run(script) { [weak self] result in
+            self?.handleJSResult(result, completion: completion)
+        }
+    }
+    
+    // MARK: - JavaScript Result Handler
+    private func handleJSResult(_ result: Result<String, Error>, completion: @escaping (Bool) -> Void) {
+        switch result {
+        case .success(let output):
+            let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            if trimmed.isEmpty {
+                DispatchQueue.main.async { completion(false) }
+                return
+            }
+            
+            // Check for prefix type
+            if trimmed.hasPrefix("YTM|||") || trimmed.hasPrefix("YT|||") {
+                // JavaScript extraction succeeded
+                let prefixEnd = trimmed.hasPrefix("YTM|||") ? "YTM|||".count : "YT|||".count
+                var payload = String(trimmed.dropFirst(prefixEnd))
+                
+                // AppleScript wraps JS string returns in double quotes — strip them
+                if payload.hasPrefix("\"") && payload.hasSuffix("\"") && payload.count >= 2 {
+                    payload = String(payload.dropFirst().dropLast())
+                }
+                
+                let parts = payload.components(separatedBy: "|||")
+                
+                guard parts.count >= 5 else {
+                    Logger.error("Unexpected parts count: \(parts.count) from payload: \(String(payload.prefix(100)))", category: "playback")
+                    DispatchQueue.main.async { completion(false) }
+                    return
+                }
+                
+                var title = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+                var artist = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                let elapsedStr = parts[2].trimmingCharacters(in: .whitespacesAndNewlines)
+                let durationStr = parts[3].trimmingCharacters(in: .whitespacesAndNewlines)
+                let isPausedStr = parts[4].trimmingCharacters(in: .whitespacesAndNewlines)
+                
+                // Strip wrapping quotes from AppleScript output
+                title = title.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                artist = artist.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                
+                // Skip if no title
+                if title.isEmpty || title.lowercased() == "youtube music" || title.lowercased() == "youtube" {
+                    DispatchQueue.main.async { completion(false) }
+                    return
+                }
+                
+                // Default artist if empty
+                if artist.isEmpty {
+                    artist = "Unknown Artist"
+                }
+                
+                let elapsed = Double(elapsedStr) ?? 0.0
+                let duration = Double(durationStr) ?? 300.0
+                let isPaused = isPausedStr.lowercased() == "true"
+                
+                Logger.info("🎵 Detected: \(title) - \(artist) [\(String(format: "%.1f", elapsed))/\(String(format: "%.0f", duration))s] paused=\(isPaused)", category: "playback")
+                
+                DispatchQueue.main.async {
+                    self.updateTrack(title: title, artist: artist, duration: duration, elapsed: elapsed, isPaused: isPaused, isEstimatedProgress: false)
+                    completion(true)
+                }
+                
+            } else if trimmed.hasPrefix("TITLE|||") {
+                // Fallback to tab title parsing
+                let tabTitle = String(trimmed.dropFirst("TITLE|||".count))
+                let cleaned = cleanTrackTitle(tabTitle)
+                
+                let (title, artist) = parseTabTitle(cleaned)
+                
+                if title.isEmpty || title.lowercased() == "youtube music" || title.lowercased() == "youtube" {
+                    DispatchQueue.main.async { completion(false) }
+                    return
+                }
+                
+                Logger.info("🎵 Detected (title fallback): \(title) - \(artist)", category: "playback")
+                
+                DispatchQueue.main.async {
+                    self.updateTrack(title: title, artist: artist, duration: 300.0, elapsed: 0.0, isPaused: false, isEstimatedProgress: true)
+                    completion(true)
+                }
+            } else {
+                DispatchQueue.main.async { completion(false) }
+            }
+            
+        case .failure(let error):
+            Logger.error("AppleScript failed", category: "playback", error: error)
+            DispatchQueue.main.async { completion(false) }
+        }
+    }
+    
+    // MARK: - Title Parsing Helpers
+    private func cleanTrackTitle(_ rawTitle: String) -> String {
+        var cleaned = rawTitle
+        let suffixes = [
+            " - YouTube Music",
+            " | YouTube Music",
+            " - YouTube",
+            " | YouTube"
+        ]
+        for suffix in suffixes {
+            if cleaned.hasSuffix(suffix) {
+                cleaned = String(cleaned.dropLast(suffix.count))
+            }
+        }
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    private func parseTabTitle(_ cleaned: String) -> (title: String, artist: String) {
+        if cleaned.contains(" • ") {
+            let chunks = cleaned.components(separatedBy: " • ")
+            return (chunks[0].trimmingCharacters(in: .whitespacesAndNewlines),
+                    chunks[1].trimmingCharacters(in: .whitespacesAndNewlines))
+        } else if cleaned.contains(" - ") {
+            let chunks = cleaned.components(separatedBy: " - ")
+            return (chunks[0].trimmingCharacters(in: .whitespacesAndNewlines),
+                    chunks.dropFirst().joined(separator: " - ").trimmingCharacters(in: .whitespacesAndNewlines))
+        } else {
+            return (cleaned.trimmingCharacters(in: .whitespacesAndNewlines), "Unknown Artist")
+        }
+    }
+    
+    // MARK: - Track State Management
+    private func updateTrack(title: String, artist: String, duration: Double, elapsed: Double, isPaused: Bool, isEstimatedProgress: Bool) {
+        let now = Date()
+        if let current = currentTrack, current.title == title, current.artist == artist {
+            var updated = current
+            updated.isPaused = isPaused
+            updated.duration = duration
+            updated.isEstimatedProgress = isEstimatedProgress
+            
+            if !isEstimatedProgress {
+                if abs(elapsed - current.elapsedTime) > 0.5 {
+                    updated.elapsedTime = elapsed
+                    updated.lastUpdated = now
+                } else if !isPaused {
+                    let expectedTime = current.currentProgress
+                    if abs(elapsed - expectedTime) > 2.0 {
+                        updated.elapsedTime = elapsed
+                        updated.lastUpdated = now
+                    }
+                }
+            } else {
+                updated.elapsedTime = current.elapsedTime
+                updated.lastUpdated = current.lastUpdated
+            }
+            
+            if currentTrack != updated {
+                currentTrack = updated
+            }
+        } else {
+            let newTrack = Track(title: title, artist: artist, duration: duration, elapsedTime: elapsed, isPaused: isPaused, lastUpdated: now, isEstimatedProgress: isEstimatedProgress)
+            currentTrack = newTrack
+            Logger.info("🎵 Track Changed: \(title) - \(artist) (Duration: \(duration)s)", category: "playback")
+            triggerNotification(for: newTrack)
+        }
+    }
+    
+    func resolveTrackMetadata(title: String, artist: String) {
+        if var current = currentTrack, current.title == title {
+            current = Track(
+                title: title,
+                artist: artist,
+                duration: current.duration,
+                elapsedTime: current.elapsedTime,
+                isPaused: current.isPaused,
+                lastUpdated: current.lastUpdated,
+                isEstimatedProgress: current.isEstimatedProgress
+            )
+            self.currentTrack = current
+            Logger.info("📝 Resolved metadata: \(title) -> \(artist)", category: "playback")
+        }
+    }
+    
+    private func triggerNotification(for track: Track) {
+        let content = UNMutableNotificationContent()
+        content.title = "Now Playing"
+        content.body = "\(track.title) by \(track.artist)"
+        content.sound = .none
+        
+        let request = UNNotificationRequest(identifier: "TrackChanged", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                Logger.error("Failed to deliver track change notification", category: "playback", error: error)
+            }
+        }
+    }
+}

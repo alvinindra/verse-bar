@@ -1,0 +1,9 @@
+.DS_Store
+Verse Bar.app/
+VerseBar
+*.dSYM
+*.xcodeproj/
+build/
+DerivedData/
+*.zip
+*.sha256

@@ -1,0 +1,350 @@
+import Foundation
+import Combine
+
+class LyricsService: ObservableObject {
+    static let shared = LyricsService()
+    
+    @Published var lyricLines: [LyricLine] = []
+    @Published var currentLineIndex: Int?
+    @Published var isFetching = false
+    @Published var offlineMode = false
+    
+    private var playbackEngine = PlaybackEngine.shared
+    private var cancellables = Set<AnyCancellable>()
+    private var syncTimer: Timer?
+    
+    private var lastTrackTitle = ""
+    private var lastTrackArtist = ""
+    
+    private let cacheDirectory: URL
+    
+    private init() {
+        // Resolve local cache directory
+        let paths = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+        let appSupportDir = paths[0].appendingPathComponent("com.versebar.VerseBar", isDirectory: true)
+        self.cacheDirectory = appSupportDir.appendingPathComponent("LyricsCache", isDirectory: true)
+        
+        do {
+            try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true, attributes: nil)
+        } catch {
+            Logger.error("Failed to create lyrics cache directory", category: "lyrics", error: error)
+        }
+        
+        // Listen to track changes from PlaybackEngine
+        playbackEngine.$currentTrack
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] track in
+                self?.handleTrackChanged(track)
+            }
+            .store(in: &cancellables)
+            
+        // Start high-precision interpolation timer
+        startSyncTimer()
+    }
+    
+    private func handleTrackChanged(_ track: Track?) {
+        guard let track = track else {
+            self.lyricLines = []
+            self.currentLineIndex = nil
+            self.lastTrackTitle = ""
+            self.lastTrackArtist = ""
+            return
+        }
+        
+        // Only fetch if track title or artist has changed
+        if track.title == lastTrackTitle && track.artist == lastTrackArtist {
+            return
+        }
+        
+        self.lastTrackTitle = track.title
+        self.lastTrackArtist = track.artist
+        self.lyricLines = []
+        self.currentLineIndex = nil
+        
+        Logger.info("📀 Fetching lyrics for: \(track.title) - \(track.artist)", category: "lyrics")
+        fetchLyrics(for: track)
+    }
+    
+    private func startSyncTimer() {
+        syncTimer?.invalidate()
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            self?.updateActiveLyricIndex()
+        }
+    }
+    
+    private func updateActiveLyricIndex() {
+        guard let track = playbackEngine.currentTrack, !lyricLines.isEmpty else {
+            if currentLineIndex != nil {
+                currentLineIndex = nil
+            }
+            return
+        }
+        
+        let elapsed = track.currentProgress + AppSettings.shared.manualSyncOffset
+        
+        // Find current line (last line whose timestamp <= elapsed)
+        var foundIndex: Int?
+        for (index, line) in lyricLines.enumerated() {
+            if line.timestamp <= elapsed {
+                foundIndex = index
+            } else {
+                break
+            }
+        }
+        
+        if currentLineIndex != foundIndex {
+            currentLineIndex = foundIndex
+        }
+    }
+    
+    // MARK: - Lyrics Fetching & Caching
+    private func fetchLyrics(for track: Track) {
+        let slug = getCacheSlug(artist: track.artist, title: track.title)
+        let cacheFile = cacheDirectory.appendingPathComponent("\(slug).json")
+        
+        // Try Cache first
+        if FileManager.default.fileExists(atPath: cacheFile.path) {
+            do {
+                let data = try Data(contentsOf: cacheFile)
+                let lines = try JSONDecoder().decode([CachedLyricLine].self, from: data)
+                self.lyricLines = lines.map { LyricLine(timestamp: $0.timestamp, text: $0.text) }
+                Logger.info("✅ Loaded cached lyrics for \(track.title) (\(self.lyricLines.count) lines)", category: "lyrics")
+                return
+            } catch {
+                Logger.error("Failed to load cached lyrics", category: "lyrics", error: error)
+            }
+        }
+        
+        // Offline check
+        if offlineMode {
+            self.lyricLines = [LyricLine(timestamp: 0.0, text: "Lyrics unavailable offline")]
+            return
+        }
+        
+        // If the artist is generic, skip exact get and go to search fallback
+        if track.artist == "Unknown Artist" || track.artist == "YouTube Music" || track.artist == "YouTube" {
+            self.isFetching = true
+            self.fetchFallback(track: track)
+            return
+        }
+        
+        // Fetch from LRCLIB using exact get
+        self.isFetching = true
+        let encodedTitle = track.title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let encodedArtist = track.artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let durationParam = track.duration > 0 ? "&duration=\(Int(track.duration))" : ""
+        
+        guard let url = URL(string: "https://lrclib.net/api/get?artist_name=\(encodedArtist)&track_name=\(encodedTitle)\(durationParam)") else {
+            self.isFetching = false
+            return
+        }
+        
+        Logger.info("🌐 Fetching from LRCLIB: \(url.absoluteString)", category: "lyrics")
+        
+        var request = URLRequest(url: url)
+        request.setValue("VerseBar/1.0 (https://github.com/antikode/verse-bar)", forHTTPHeaderField: "User-Agent")
+        
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                Logger.error("Failed to fetch lyrics from LRCLIB", category: "lyrics", error: error)
+                DispatchQueue.main.async {
+                    self.isFetching = false
+                    self.fetchFallback(track: track)
+                }
+                return
+            }
+            
+            guard let data = data,
+                  let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                Logger.info("LRCLIB exact get returned status \(statusCode), trying search fallback", category: "lyrics")
+                DispatchQueue.main.async {
+                    self.isFetching = false
+                    self.fetchFallback(track: track)
+                }
+                return
+            }
+            
+            self.parseAndCacheResponse(data, track: track, cacheFile: cacheFile)
+        }.resume()
+    }
+    
+    private func fetchFallback(track: Track) {
+        // Try searching. If artist is generic, search ONLY for the song title!
+        let query: String
+        if track.artist == "Unknown Artist" || track.artist == "YouTube Music" || track.artist == "YouTube" {
+            query = track.title
+        } else {
+            query = "\(track.title) \(track.artist)"
+        }
+        
+        let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        
+        guard let url = URL(string: "https://lrclib.net/api/search?q=\(encodedQuery)") else {
+            self.isFetching = false
+            return
+        }
+        
+        Logger.info("🔍 LRCLIB search fallback: \(url.absoluteString)", category: "lyrics")
+        
+        self.isFetching = true
+        
+        var request = URLRequest(url: url)
+        request.setValue("VerseBar/1.0 (https://github.com/antikode/verse-bar)", forHTTPHeaderField: "User-Agent")
+        
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+            
+            defer {
+                DispatchQueue.main.async {
+                    self.isFetching = false
+                }
+            }
+            
+            if error != nil {
+                DispatchQueue.main.async {
+                    self.lyricLines = [LyricLine(timestamp: 0.0, text: "Lyrics not found")]
+                }
+                return
+            }
+            
+            guard let data = data,
+                  let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                DispatchQueue.main.async {
+                    self.lyricLines = [LyricLine(timestamp: 0.0, text: "Lyrics not found")]
+                }
+                return
+            }
+            
+            do {
+                let searchResults = try JSONDecoder().decode([LRCLIBResponse].self, from: data)
+                Logger.info("🔍 Search returned \(searchResults.count) results", category: "lyrics")
+                
+                // Look for the first result that actually has synced lyrics
+                if let bestMatch = searchResults.first(where: { $0.syncedLyrics != nil && !($0.syncedLyrics?.isEmpty ?? true) }) {
+                    let cacheFile = self.cacheDirectory.appendingPathComponent("\(self.getCacheSlug(artist: track.artist, title: track.title)).json")
+                    
+                    if let rawData = try? JSONEncoder().encode(bestMatch) {
+                        self.parseAndCacheResponse(rawData, track: track, cacheFile: cacheFile)
+                        
+                        // Update PlaybackEngine with the real artist name!
+                        if let realArtist = bestMatch.artistName, (track.artist == "Unknown Artist" || track.artist == "YouTube Music" || track.artist == "YouTube") {
+                            DispatchQueue.main.async {
+                                PlaybackEngine.shared.resolveTrackMetadata(title: track.title, artist: realArtist)
+                            }
+                        }
+                    }
+                } else {
+                    Logger.info("No synced lyrics found in search results", category: "lyrics")
+                    DispatchQueue.main.async {
+                        self.lyricLines = [LyricLine(timestamp: 0.0, text: "Synced lyrics not found")]
+                    }
+                }
+            } catch {
+                Logger.error("Failed to decode search results", category: "lyrics", error: error)
+                DispatchQueue.main.async {
+                    self.lyricLines = [LyricLine(timestamp: 0.0, text: "Lyrics parsing error")]
+                }
+            }
+        }.resume()
+    }
+    
+    private func parseAndCacheResponse(_ data: Data, track: Track, cacheFile: URL) {
+        do {
+            let responseObj = try JSONDecoder().decode(LRCLIBResponse.self, from: data)
+            let syncedContent = responseObj.syncedLyrics ?? ""
+            let parsedLines = parseLRC(syncedContent)
+
+            DispatchQueue.main.async {
+                self.isFetching = false
+                if parsedLines.isEmpty {
+                    self.lyricLines = [LyricLine(timestamp: 0.0, text: "No synced lyrics available")]
+                    Logger.info("⚠️ Parsed 0 lines from synced lyrics content", category: "lyrics")
+                } else {
+                    self.lyricLines = parsedLines
+                    Logger.info("✅ Loaded \(parsedLines.count) lyric lines for \(track.title)", category: "lyrics")
+                    // Save to local cache
+                    let cachedLines = parsedLines.map { CachedLyricLine(timestamp: $0.timestamp, text: $0.text) }
+                    if let cachedData = try? JSONEncoder().encode(cachedLines) {
+                        try? cachedData.write(to: cacheFile)
+                        Logger.info("💾 Saved cached lyrics for \(track.title)", category: "lyrics")
+                    }
+                }
+            }
+        } catch {
+            Logger.error("Failed to decode LRCLIB response", category: "lyrics", error: error)
+            DispatchQueue.main.async {
+                self.isFetching = false
+                self.lyricLines = [LyricLine(timestamp: 0.0, text: "Failed to parse lyrics")]
+            }
+        }
+    }
+    
+    // MARK: - LRC File Parser
+    private func parseLRC(_ lrcContent: String) -> [LyricLine] {
+        guard !lrcContent.isEmpty else { return [] }
+        
+        var lines: [LyricLine] = []
+        // Match [mm:ss.xx] or [mm:ss] format
+        let regex = try! NSRegularExpression(pattern: "^\\[(\\d+):(\\d+)(?:\\.(\\d+))?\\](.*)$", options: [])
+        
+        let rawLines = lrcContent.components(separatedBy: .newlines)
+        
+        for rawLine in rawLines {
+            let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            
+            let range = NSRange(location: 0, length: trimmed.utf16.count)
+            if let match = regex.firstMatch(in: trimmed, options: [], range: range) {
+                let minStr = (trimmed as NSString).substring(with: match.range(at: 1))
+                let secStr = (trimmed as NSString).substring(with: match.range(at: 2))
+                
+                var fractional = 0.0
+                if match.range(at: 3).location != NSNotFound {
+                    let fracStr = (trimmed as NSString).substring(with: match.range(at: 3))
+                    // Handle both centiseconds (2 digits) and milliseconds (3 digits)
+                    if fracStr.count == 2 {
+                        fractional = (Double(fracStr) ?? 0.0) / 100.0
+                    } else if fracStr.count == 3 {
+                        fractional = (Double(fracStr) ?? 0.0) / 1000.0
+                    } else {
+                        fractional = (Double(fracStr) ?? 0.0) / pow(10.0, Double(fracStr.count))
+                    }
+                }
+                
+                let minutes = Double(minStr) ?? 0.0
+                let seconds = Double(secStr) ?? 0.0
+                let timestamp = minutes * 60.0 + seconds + fractional
+                
+                let text = (trimmed as NSString).substring(with: match.range(at: 4)).trimmingCharacters(in: .whitespacesAndNewlines)
+                
+                lines.append(LyricLine(timestamp: timestamp, text: text))
+            }
+        }
+        
+        // Sort lines chronologically
+        return lines.sorted(by: { $0.timestamp < $1.timestamp })
+    }
+    
+    private func getCacheSlug(artist: String, title: String) -> String {
+        let combined = "\(artist.lowercased())_\(title.lowercased())"
+        let allowed = CharacterSet.alphanumerics
+        return String(combined.unicodeScalars.filter { allowed.contains($0) || $0 == "_" })
+    }
+}
+
+// MARK: - Decodable Helpers
+struct LRCLIBResponse: Codable {
+    let id: Int?
+    let trackName: String?
+    let artistName: String?
+    let syncedLyrics: String?  // Optional: may be null if only plain lyrics available
+    let plainLyrics: String?   // Fallback plain text lyrics
+}
+
+struct CachedLyricLine: Codable {
+    let timestamp: TimeInterval
+    let text: String
+}

@@ -1,0 +1,128 @@
+import SwiftUI
+
+struct SettingsView: View {
+    @ObservedObject var settings = AppSettings.shared
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Elegant top gradient bar
+            LinearGradient(gradient: Gradient(colors: [Color.accentColor, Color.accentColor.opacity(0.8)]), startPoint: .topLeading, endPoint: .bottomTrailing)
+                .frame(height: 60)
+                .overlay(
+                    HStack {
+                        Image(systemName: "music.note.list")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(.white)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Verse Bar Preferences")
+                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                            Text("Configure playback syncing and display options")
+                                .font(.system(size: 10))
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 20)
+                )
+            
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    
+                    // Display Options Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("MENU BAR RENDER OPTIONS")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(.secondary)
+                        
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Show Artist Name", isOn: $settings.showArtist)
+                            Toggle("Show Track Title", isOn: $settings.showTitle)
+                            Toggle("Show Realtime Lyrics Line", isOn: $settings.showLyrics)
+                        }
+                        .toggleStyle(.checkbox)
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.primary.opacity(0.03).cornerRadius(10))
+                    }
+                    
+                    // Active Syncing Sources Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("ACTIVE SOURCES TO POLL")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(.secondary)
+                        
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Arc Browser (YouTube Music Tab)", isOn: $settings.trackingArc)
+                            Toggle("Safari Browser (YouTube Music Tab)", isOn: $settings.trackingSafari)
+                            Toggle("Google Chrome Browser (YouTube Music Tab)", isOn: $settings.trackingChrome)
+                            Toggle("YouTube Music Desktop App (Localhost Server)", isOn: $settings.trackingYTMDesktop)
+                        }
+                        .toggleStyle(.checkbox)
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.primary.opacity(0.03).cornerRadius(10))
+                    }
+                    
+                    // General Options Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("GENERAL OPTIONS")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(.secondary)
+                        
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Start Verse Bar at Login", isOn: $settings.launchAtLogin)
+                                .onChange(of: settings.launchAtLogin) { _, newValue in
+                                    configureLoginItem(enabled: newValue)
+                                }
+                        }
+                        .toggleStyle(.checkbox)
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.primary.opacity(0.03).cornerRadius(10))
+                    }
+                    
+                    // Realtime JS Timing Guide Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("💡 REALTIME LYRIC TIMING GUIDE")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(.accentColor)
+                        
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("To sync lyrics with millisecond precision, Verse Bar needs browser permission to query the media timer. Enable this setting in your preferred browser:")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("• **Arc Browser:** Go to *Arc* in top menu bar > *Developer* > check **'Allow JavaScript from Apple Events'**.")
+                                Text("• **Google Chrome:** Go to *Developer* menu in top menu bar and check **'Allow JavaScript from Apple Events'**.")
+                                Text("• **Safari:** Open Safari Settings > Advanced, check **'Show Develop menu in menu bar'**, then in the *Develop* menu check **'Allow JavaScript from Apple Events'**.")
+                            }
+                            .font(.system(size: 11, design: .rounded))
+                            .foregroundColor(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            
+                            Text("*If disabled, Verse Bar falls back to smart wall-clock estimation which still works out-of-the-box!*")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.accentColor.opacity(0.06).cornerRadius(10))
+                    }
+                }
+                .padding(20)
+            }
+        }
+        .frame(width: 420, height: 480)
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+    
+    private func configureLoginItem(enabled: Bool) {
+        // Modern login item setup (requires ServiceManagement framework integration)
+        // Here we log the state and update preferences, the launcher does the work.
+        Logger.info("Login item state changed: \(enabled)", category: "general")
+    }
+}
