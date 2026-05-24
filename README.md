@@ -1,8 +1,10 @@
 # Verse Bar
 
+> **Landing page:** [alvinindra.github.io/verse-bar](https://alvinindra.github.io/verse-bar/) · **Download:** [latest release](https://github.com/alvinindra/verse-bar/releases/latest)
+
 A macOS menu bar app that displays **synced lyrics** of whatever you're playing on YouTube Music (Safari, Chrome, Arc, or the YouTube Music Desktop app) — in the menu bar, in a popover, and on the **MacBook Pro Touch Bar**.
 
-Powered by [LRCLIB](https://lrclib.net) for lyrics, AppleScript for browser introspection, and the private DFRFoundation API for Touch Bar Control Strip integration.
+Powered by [LRCLIB](https://lrclib.net) for lyrics and AppleScript for browser introspection.
 
 ---
 

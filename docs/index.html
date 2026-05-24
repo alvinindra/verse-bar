@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Verse Bar — synced lyrics in your macOS menu bar</title>
+  <meta name="description" content="A minimal macOS menu bar app that displays synced lyrics for YouTube Music in the menu bar, a glassmorphic popover, and the MacBook Pro Touch Bar." />
+  <meta property="og:title" content="Verse Bar" />
+  <meta property="og:description" content="Synced YouTube Music lyrics in your macOS menu bar." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://alvinindra.github.io/verse-bar/" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E%E2%99%AA%3C/text%3E%3C/svg%3E" />
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --bg-soft: #131313;
+      --fg: #f5f5f5;
+      --fg-dim: #9a9a9a;
+      --line: #1f1f1f;
+      --accent: #6c8eff;
+      --accent-glow: rgba(108, 142, 255, 0.22);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI",
+                   "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-feature-settings: "ss01", "cv11";
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      line-height: 1.55;
+    }
+
+    body {
+      background:
+        radial-gradient(1200px 600px at 80% -10%, var(--accent-glow), transparent 60%),
+        radial-gradient(800px 500px at 10% 110%, rgba(108, 142, 255, 0.10), transparent 60%),
+        var(--bg);
+      min-height: 100vh;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    a:hover { text-decoration: underline; }
+
+    .wrap {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 32px 24px 80px;
+    }
+
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 24px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .brand-glyph {
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, #6c8eff, #b78bff);
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      color: white;
+    }
+    nav .links { display: flex; gap: 20px; font-size: 14px; color: var(--fg-dim); }
+    nav .links a { color: var(--fg-dim); }
+    nav .links a:hover { color: var(--fg); text-decoration: none; }
+
+    header.hero {
+      padding: 80px 0 56px;
+      text-align: center;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 6px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--fg-dim);
+      margin-bottom: 24px;
+    }
+    h1 {
+      font-size: clamp(40px, 7vw, 72px);
+      line-height: 1.04;
+      letter-spacing: -0.03em;
+      margin: 0 0 18px;
+      font-weight: 700;
+    }
+    h1 .accent {
+      background: linear-gradient(120deg, #6c8eff, #b78bff);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    p.lead {
+      font-size: clamp(16px, 2vw, 19px);
+      color: var(--fg-dim);
+      max-width: 620px;
+      margin: 0 auto 36px;
+    }
+
+    .cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--fg);
+      color: var(--bg);
+      padding: 14px 22px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 15px;
+      transition: transform 120ms ease, box-shadow 120ms ease;
+      box-shadow: 0 8px 30px rgba(255,255,255,0.05);
+    }
+    .cta:hover {
+      transform: translateY(-1px);
+      text-decoration: none;
+      box-shadow: 0 10px 36px rgba(255,255,255,0.10);
+    }
+    .cta-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 10px;
+      color: var(--fg-dim);
+      padding: 14px 18px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      font-size: 14px;
+    }
+    .cta-secondary:hover {
+      color: var(--fg);
+      border-color: #2a2a2a;
+      text-decoration: none;
+    }
+    .version-pill {
+      display: inline-block;
+      margin-top: 14px;
+      font-size: 12px;
+      color: var(--fg-dim);
+      letter-spacing: 0.02em;
+    }
+
+    .preview {
+      margin: 56px auto 0;
+      max-width: 520px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background:
+        radial-gradient(800px 300px at 50% -50%, rgba(108,142,255,0.20), transparent 70%),
+        linear-gradient(180deg, #161616 0%, #0e0e0e 100%);
+      padding: 18px 18px 20px;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.45);
+    }
+    .preview .menubar {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 4px 14px;
+      color: var(--fg-dim);
+      font-size: 13px;
+      border-bottom: 1px solid var(--line);
+    }
+    .preview .menubar .lyric {
+      color: var(--fg);
+      font-weight: 500;
+    }
+    .preview .menubar .icon { opacity: 0.8; }
+    .preview .body {
+      padding-top: 18px;
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      gap: 14px;
+      align-items: center;
+    }
+    .preview .cover {
+      width: 56px;
+      height: 56px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(108,142,255,0.25), rgba(183,139,255,0.25));
+      display: grid;
+      place-items: center;
+      font-size: 22px;
+    }
+    .preview .title { font-weight: 600; font-size: 15px; }
+    .preview .artist { color: var(--fg-dim); font-size: 13px; }
+    .preview .controls {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: center;
+      gap: 22px;
+      padding-top: 14px;
+      color: var(--fg-dim);
+      font-size: 16px;
+    }
+    .preview .play { color: var(--accent); }
+
+    section { padding: 64px 0; border-top: 1px solid var(--line); }
+    section h2 {
+      font-size: 28px;
+      letter-spacing: -0.02em;
+      margin: 0 0 8px;
+      font-weight: 700;
+    }
+    section .subhead {
+      color: var(--fg-dim);
+      margin-bottom: 36px;
+      font-size: 15px;
+    }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+    }
+    .feature {
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--bg-soft);
+    }
+    .feature h3 {
+      margin: 0 0 6px;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .feature p { margin: 0; color: var(--fg-dim); font-size: 14px; }
+    .feature .ico {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: rgba(108,142,255,0.12);
+      color: var(--accent);
+      display: grid;
+      place-items: center;
+      font-size: 16px;
+      margin-bottom: 14px;
+    }
+
+    .steps {
+      counter-reset: step;
+      display: grid;
+      gap: 18px;
+    }
+    .step {
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--bg-soft);
+      display: grid;
+      grid-template-columns: 36px 1fr;
+      gap: 14px;
+      align-items: start;
+    }
+    .step::before {
+      counter-increment: step;
+      content: counter(step);
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: white;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .step h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+    .step p { margin: 0; color: var(--fg-dim); font-size: 14px; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      background: #181818;
+      border: 1px solid var(--line);
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      color: #d5d5d5;
+    }
+    pre {
+      background: #0d0d0d;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      color: #d5d5d5;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    pre code { background: none; border: 0; padding: 0; }
+
+    footer {
+      padding: 40px 0 0;
+      color: var(--fg-dim);
+      font-size: 13px;
+      text-align: center;
+      border-top: 1px solid var(--line);
+      margin-top: 60px;
+    }
+    footer a { color: var(--fg-dim); }
+
+    @media (max-width: 600px) {
+      header.hero { padding: 48px 0 36px; }
+      .cta-secondary { margin-left: 0; margin-top: 10px; }
+      nav .links { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <nav>
+      <div class="brand">
+        <div class="brand-glyph">♪</div>
+        Verse Bar
+      </div>
+      <div class="links">
+        <a href="#features">Features</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/alvinindra/verse-bar">GitHub</a>
+      </div>
+    </nav>
+
+    <header class="hero">
+      <span class="tag">macOS · open source · free</span>
+      <h1>Synced lyrics<br/><span class="accent">in your menu bar.</span></h1>
+      <p class="lead">
+        Verse Bar streams the current line of YouTube Music straight into the macOS
+        menu bar, a glassmorphic popover, and the MacBook Pro Touch Bar — quietly,
+        without ever interrupting your flow.
+      </p>
+      <div>
+        <a class="cta" href="https://github.com/alvinindra/verse-bar/releases/latest" rel="noopener">
+          ↓ Download for macOS
+        </a>
+        <a class="cta-secondary" href="https://github.com/alvinindra/verse-bar" rel="noopener">View on GitHub →</a>
+      </div>
+      <div class="version-pill">Latest release · macOS 11+ · Apple Silicon &amp; Intel</div>
+
+      <div class="preview" aria-hidden="true">
+        <div class="menubar">
+          <span class="lyric">I open my eyes</span>
+          <span class="icon">♪</span>
+          <span>A</span>
+          <span>96%</span>
+        </div>
+        <div class="body">
+          <div class="cover">♪</div>
+          <div>
+            <div class="title">Past Won't Leave My Bed</div>
+            <div class="artist">Joji</div>
+          </div>
+          <div class="controls">
+            <span>◀◀</span>
+            <span class="play">▶</span>
+            <span>▶▶</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <section id="features">
+      <h2>What it does</h2>
+      <p class="subhead">Built for people who want the lyric without leaving their work.</p>
+      <div class="features">
+        <div class="feature">
+          <div class="ico">♪</div>
+          <h3>Live in the menu bar</h3>
+          <p>The active lyric line sits in the macOS menu bar — lyric on the left, icon on the right, updating in real time.</p>
+        </div>
+        <div class="feature">
+          <div class="ico">✦</div>
+          <h3>Glassmorphic popover</h3>
+          <p>Click the icon for a scrolling lyric view with playback controls, sync offset, and a tap-to-seek timeline.</p>
+        </div>
+        <div class="feature">
+          <div class="ico">⌨</div>
+          <h3>Touch Bar support</h3>
+          <p>Open the popover and the current lyric also fills the MacBook Pro Touch Bar.</p>
+        </div>
+        <div class="feature">
+          <div class="ico">⚡</div>
+          <h3>Source-agnostic</h3>
+          <p>Works with YouTube Music in Safari, Chrome, Arc, and the YTMDesktop companion server on port 9863.</p>
+        </div>
+        <div class="feature">
+          <div class="ico">⌁</div>
+          <h3>LRCLIB-powered</h3>
+          <p>Synced lyrics fetched from the open LRCLIB database, cached locally for instant load on repeat plays.</p>
+        </div>
+        <div class="feature">
+          <div class="ico">⌬</div>
+          <h3>Tap to seek</h3>
+          <p>Click any lyric line in the popover to jump the player to that moment — no manual scrubbing.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="install">
+      <h2>Install in 4 steps</h2>
+      <p class="subhead">No package manager, no Xcode required.</p>
+      <div class="steps">
+        <div class="step">
+          <div>
+            <h3>Download the latest release</h3>
+            <p>Grab <code>VerseBar-vX.Y.Z.zip</code> from the <a href="https://github.com/alvinindra/verse-bar/releases/latest">releases page</a> and unzip it.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div>
+            <h3>Move to Applications</h3>
+            <p>Drag <code>Verse Bar.app</code> into <code>/Applications</code> and launch it. The music-note icon will appear in your menu bar.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div>
+            <h3>Grant permissions</h3>
+            <p>Allow Automation when macOS prompts (System Settings → Privacy &amp; Security → Automation). Enable each browser you use.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div>
+            <h3>Play something</h3>
+            <p>Open <code>music.youtube.com</code>, hit play, and the lyric will track within ~1.5s.</p>
+          </div>
+        </div>
+      </div>
+
+      <h2 style="margin-top:48px;">Or build from source</h2>
+      <p class="subhead">Single Swift build script. Needs Xcode Command Line Tools.</p>
+<pre><code>git clone https://github.com/alvinindra/verse-bar.git
+cd verse-bar
+./build.sh
+open "Verse Bar.app"</code></pre>
+    </section>
+
+    <footer>
+      <p>
+        Lyrics by <a href="https://lrclib.net">LRCLIB</a>.
+        Source on <a href="https://github.com/alvinindra/verse-bar">GitHub</a>.
+        MIT licensed.
+      </p>
+      <p style="margin-top:6px;">© 2026 Verse Bar contributors</p>
+    </footer>
+  </div>
+</body>
+</html>
