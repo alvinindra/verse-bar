@@ -3,12 +3,17 @@ import SwiftUI
 import Combine
 
 /// Hosting controller for the popover that vends an NSTouchBar.
-/// When the popover is visible, macOS shows this Touch Bar in the app region (left)
-/// of the MacBook Pro Touch Bar.
 ///
-/// We intentionally do NOT use the private Control Strip (system tray) API.
-/// Apple closed that on macOS Sequoia (15.x) — third-party tray items are silently
-/// ignored even when `addSystemTrayItem:` reports success.
+/// macOS only shows this Touch Bar while the popover is visible. To keep the
+/// lyric on the Touch Bar while you work in another app, use the Pin toggle in
+/// the popover header — it flips popover.behavior to .applicationDefined so the
+/// popover (and therefore the Touch Bar) stays open across app switches.
+///
+/// An ambient Touch Bar Control Strip item is not currently feasible: macOS
+/// Sequoia silently filters third-party tray items registered with
+/// `addSystemTrayItem:` unless the binary is signed with an Apple Developer ID
+/// and notarized. This project ships ad-hoc signed, so the Control Strip path
+/// is not viable here.
 final class PopoverHostingController: NSHostingController<PopoverView>, NSTouchBarDelegate {
 
     private let lyricId    = NSTouchBarItem.Identifier("com.versebar.popover.touchbar.lyric")
@@ -106,7 +111,6 @@ final class PopoverHostingController: NSHostingController<PopoverView>, NSTouchB
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 4
-        stack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
 
         let item = NSCustomTouchBarItem(identifier: controlsId)
         item.view = stack

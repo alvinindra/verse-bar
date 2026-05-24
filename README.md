@@ -58,7 +58,7 @@ Click the menu bar icon to open the popover. While the popover is open, the Touc
 
 **Keep the Touch Bar lyric visible across app switches** — click the pin icon in the popover header. When pinned, the popover stays open even when you switch apps, so the Touch Bar lyric (and controls) remain visible. Unpin to return to the default transient behavior.
 
-> **Why not an always-visible Control Strip icon?** Earlier prototypes registered a Control Strip item via the private `addSystemTrayItem:` + `DFRElementSetControlStripPresenceForIdentifier` SPIs. On macOS Sequoia (15.x) the OS silently ignores third-party Control Strip items even when the SPI reports success — Apple closed third-party ambient Touch Bar integration. Tools that still pull it off (Pock, MTMR) replace `TouchBarServer` outright, which is outside this app's scope. The Pin toggle is the supported workaround.
+> **Why not an always-visible Control Strip icon?** macOS Sequoia (15.x) silently filters third-party tray items registered with `addSystemTrayItem:` + `DFRElementSetControlStripPresenceForIdentifier` unless the binary is signed with an Apple Developer ID and notarized. This project ships ad-hoc signed (no paid Apple Developer account), so the ambient Control Strip path is not viable here. Apps that achieve persistent Touch Bar lyrics — LyricsX, BetterTouchTool, Pock — all rely on either Developer ID signing + notarization or a TouchBarServer replacement. The Pin toggle is the supported workaround inside this project's scope.
 
 ## Settings
 
@@ -74,7 +74,7 @@ Right-click the menu bar icon → **Preferences…** to toggle:
 - `LyricsService` queries LRCLIB's `/api/get` endpoint (exact match by artist + title + duration), falling back to `/api/search` if no exact match exists. Results are cached on disk.
 - A 100 ms timer interpolates the active lyric line against the polled playback position plus the user's manual offset.
 - `StatusItemManager` renders the active lyric in the menu bar.
-- `TouchBarController` registers a `NSCustomTouchBarItem` in the Touch Bar system tray via the private `addSystemTrayItem:` selector and `DFRElementSetControlStripPresenceForIdentifier` (resolved at runtime via `dlsym`).
+- `PopoverHostingController` vends an `NSTouchBar` whenever the popover is on screen; the bar shows the current lyric on the left and three media-control buttons on the right.
 
 ## Project Layout
 
