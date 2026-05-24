@@ -25,10 +25,16 @@ Powered by [LRCLIB](https://lrclib.net) for lyrics and AppleScript for browser i
 - Swift toolchain (`swiftc`) — ships with Xcode Command Line Tools
 - A MacBook Pro with a Touch Bar (2016–2021) for the Touch Bar feature; the app still runs fine without one
 
-## Build
+## Install
+
+**Easiest:** download the latest `.dmg` from the [releases page](https://github.com/alvinindra/verse-bar/releases/latest), double-click it, and drag **Verse Bar** onto the **Applications** shortcut.
+
+The app is ad-hoc signed but not notarized, so on first launch macOS will warn "developer cannot be verified." Right-click the app in `/Applications` and choose **Open** to allow it once.
+
+## Build from source
 
 ```bash
-git clone https://github.com/<your-org>/verse-bar.git
+git clone https://github.com/alvinindra/verse-bar.git
 cd verse-bar
 ./build.sh
 open "Verse Bar.app"
