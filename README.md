@@ -54,9 +54,11 @@ If you're using the YouTube Music Desktop App, enable its **Remote Control / Com
 
 ### Touch Bar
 
-Click the menu bar icon to open the popover; while the popover is open, the lyric is shown in the app region of the Touch Bar (left side, with the music-note icon on the right via a flexible space). It uses the public `NSTouchBar` API attached to the popover's hosting controller.
+Click the menu bar icon to open the popover. While the popover is open, the Touch Bar shows the current lyric on the left and tappable Previous / Play-Pause / Next buttons on the right.
 
-> **Why not the always-visible Control Strip?** Earlier prototypes used the private `addSystemTrayItem:` + `DFRElementSetControlStripPresenceForIdentifier` SPIs. On macOS Sequoia (15.x) the OS silently ignores third-party Control Strip items even when the SPI reports success — Apple effectively closed third-party ambient Touch Bar integration. Tools that still pull this off (Pock, MTMR) replace `TouchBarServer` outright, which is outside this app's scope.
+**Keep the Touch Bar lyric visible across app switches** — click the pin icon in the popover header. When pinned, the popover stays open even when you switch apps, so the Touch Bar lyric (and controls) remain visible. Unpin to return to the default transient behavior.
+
+> **Why not an always-visible Control Strip icon?** Earlier prototypes registered a Control Strip item via the private `addSystemTrayItem:` + `DFRElementSetControlStripPresenceForIdentifier` SPIs. On macOS Sequoia (15.x) the OS silently ignores third-party Control Strip items even when the SPI reports success — Apple closed third-party ambient Touch Bar integration. Tools that still pull it off (Pock, MTMR) replace `TouchBarServer` outright, which is outside this app's scope. The Pin toggle is the supported workaround.
 
 ## Settings
 

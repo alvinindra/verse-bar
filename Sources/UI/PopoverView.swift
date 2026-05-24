@@ -13,11 +13,22 @@ struct PopoverView: View {
             
             VStack(spacing: 12) {
                 // Header bar
-                HStack {
+                HStack(spacing: 14) {
                     Text("Verse Bar")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
                     Spacer()
+                    Button(action: { settings.pinPopover.toggle() }) {
+                        Image(systemName: settings.pinPopover ? "pin.fill" : "pin")
+                            .font(.system(size: 12))
+                            .rotationEffect(.degrees(settings.pinPopover ? 0 : 30))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(settings.pinPopover ? .accentColor : .secondary)
+                    .help(settings.pinPopover
+                          ? "Unpin — popover dismisses when clicking other apps"
+                          : "Pin — keep popover (and Touch Bar lyric) visible across apps")
+
                     Button(action: openSettings) {
                         Image(systemName: "gearshape.fill")
                             .font(.system(size: 12))

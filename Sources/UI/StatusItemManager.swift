@@ -46,12 +46,26 @@ class StatusItemManager: NSObject {
     private func setupPopover() {
         popover = NSPopover()
         popover.contentSize = NSSize(width: 320, height: 420)
-        popover.behavior = .transient
+        applyPopoverBehavior()
 
         // PopoverHostingController vends an NSTouchBar so the lyric appears in the
         // MacBook Pro Touch Bar whenever the popover is open.
         let popoverContent = PopoverView()
         popover.contentViewController = PopoverHostingController(rootView: popoverContent)
+
+        // Re-apply popover behavior whenever the user toggles the Pin setting,
+        // so Touch Bar lyric can persist across app switches when pinned.
+        settings.$pinPopover
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.applyPopoverBehavior() }
+            .store(in: &cancellables)
+    }
+
+    private func applyPopoverBehavior() {
+        // .applicationDefined keeps the popover open across app switches —
+        // required for the Touch Bar lyric to remain visible while you work
+        // in another app. .transient is the standard menu-bar-app behavior.
+        popover.behavior = settings.pinPopover ? .applicationDefined : .transient
     }
     
     private func setupBindings() {

@@ -39,7 +39,11 @@ class AppSettings: ObservableObject {
     @Published var manualSyncOffset: TimeInterval {
         didSet { UserDefaults.standard.set(manualSyncOffset, forKey: "manualSyncOffset") }
     }
-    
+
+    @Published var pinPopover: Bool {
+        didSet { UserDefaults.standard.set(pinPopover, forKey: "pinPopover") }
+    }
+
     private init() {
         UserDefaults.standard.register(defaults: [
             "showArtist": true,
@@ -50,9 +54,10 @@ class AppSettings: ObservableObject {
             "trackingChrome": true,
             "trackingArc": true,
             "trackingYTMDesktop": true,
-            "manualSyncOffset": 0.0
+            "manualSyncOffset": 0.0,
+            "pinPopover": false
         ])
-        
+
         self.showArtist = UserDefaults.standard.bool(forKey: "showArtist")
         self.showTitle = UserDefaults.standard.bool(forKey: "showTitle")
         self.showLyrics = UserDefaults.standard.bool(forKey: "showLyrics")
@@ -62,5 +67,6 @@ class AppSettings: ObservableObject {
         self.trackingArc = UserDefaults.standard.bool(forKey: "trackingArc")
         self.trackingYTMDesktop = UserDefaults.standard.bool(forKey: "trackingYTMDesktop")
         self.manualSyncOffset = UserDefaults.standard.double(forKey: "manualSyncOffset")
+        self.pinPopover = UserDefaults.standard.bool(forKey: "pinPopover")
     }
 }
