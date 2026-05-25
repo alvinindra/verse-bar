@@ -39,38 +39,30 @@ jobs:
         run: |
           ditto -c -k --sequesterRsrc --keepParent "Verse Bar.app" "VerseBar-${GITHUB_REF_NAME}.zip"
 
-      - name: Build DMG
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Build pretty DMG
         run: |
           set -e
           VERSION="${GITHUB_REF_NAME}"
-          STAGING="dmg-staging"
           DMG_NAME="VerseBar-${VERSION}.dmg"
 
-          rm -rf "$STAGING"
-          mkdir -p "$STAGING"
-          cp -R "Verse Bar.app" "$STAGING/"
-          ln -s /Applications "$STAGING/Applications"
-
-          # README inside DMG for first-time users
-          cat > "$STAGING/INSTALL.txt" <<'EOF'
-          Verse Bar — install
-
-          1. Drag "Verse Bar" onto the "Applications" shortcut.
-          2. Open Applications, right-click "Verse Bar", choose Open.
-             (Required only on first launch — the app is ad-hoc signed,
-             not notarized, so macOS Gatekeeper will warn once.)
-          3. Grant Automation permission for your browser when prompted.
-
-          Source & docs: https://github.com/alvinindra/verse-bar
-          EOF
-
-          hdiutil create \
-            -volname "Verse Bar" \
-            -srcfolder "$STAGING" \
-            -ov \
-            -format UDZO \
-            -fs HFS+ \
-            "$DMG_NAME"
+          # create-dmg builds a styled disk image: large icons, a side-by-side
+          # layout of the .app and the /Applications symlink, and a window
+          # that opens to a fixed size when the user double-clicks the DMG.
+          # No INSTALL.txt — the visual layout is self-explanatory.
+          create-dmg \
+            --volname "Verse Bar" \
+            --window-pos 200 120 \
+            --window-size 620 400 \
+            --icon-size 128 \
+            --icon "Verse Bar.app" 160 200 \
+            --app-drop-link 460 200 \
+            --hide-extension "Verse Bar.app" \
+            --no-internet-enable \
+            "$DMG_NAME" \
+            "Verse Bar.app"
 
       - name: Generate checksums
         run: |
