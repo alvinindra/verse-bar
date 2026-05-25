@@ -1,7 +1,7 @@
 import Foundation
 
 class AppleScriptRunner {
-    static func run(_ script: String, completion: @escaping (Result<String, Error>) -> Void) {
+    static func run(_ script: String, timeout: TimeInterval = 4.0, completion: @escaping (Result<String, Error>) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             // Write script to a temp file to avoid shell escaping issues with osascript -e
             let tempDir = FileManager.default.temporaryDirectory
@@ -29,11 +29,27 @@ class AppleScriptRunner {
             
             do {
                 try process.run()
+
+                let deadline = DispatchTime.now() + timeout
+                let timeoutQueue = DispatchQueue.global(qos: .utility)
+                var timedOut = false
+                timeoutQueue.asyncAfter(deadline: deadline) {
+                    if process.isRunning {
+                        timedOut = true
+                        process.terminate()
+                    }
+                }
+
                 process.waitUntilExit()
-                
+
                 let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
                 let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                
+
+                if timedOut {
+                    completion(.failure(NSError(domain: "AppleScriptErrorDomain", code: -2, userInfo: [NSLocalizedDescriptionKey: "AppleScript timed out after \(timeout)s"])))
+                    return
+                }
+
                 if process.terminationStatus == 0 {
                     let output = String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                     completion(.success(output))

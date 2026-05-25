@@ -40,6 +40,7 @@ struct SettingsView: View {
                             Toggle("Show Track Title", isOn: $settings.showTitle)
                             Toggle("Show Realtime Lyrics Line", isOn: $settings.showLyrics)
                             Toggle("Show Music Island (Dynamic Island under notch)", isOn: $settings.showNotchIsland)
+                            Toggle("Romanize Korean / Japanese / Chinese lyrics", isOn: $settings.showRomanization)
                         }
                         .toggleStyle(.checkbox)
                         .padding(14)

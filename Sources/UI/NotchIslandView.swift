@@ -20,13 +20,21 @@ struct NotchIslandView: View {
 
     private var isExpanded: Bool { hovering }
 
+    @ObservedObject private var settings = AppSettings.shared
+
     private var currentLyric: String? {
         guard !lyricsService.lyricLines.isEmpty,
               let idx = lyricsService.currentLineIndex,
               idx >= 0, idx < lyricsService.lyricLines.count else {
             return nil
         }
-        let text = lyricsService.lyricLines[idx].text
+        let line = lyricsService.lyricLines[idx]
+        let text: String
+        if settings.showRomanization, let romanized = line.romanized {
+            text = romanized
+        } else {
+            text = line.text
+        }
         return text.isEmpty ? nil : text
     }
 
@@ -85,12 +93,20 @@ struct NotchIslandView: View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.white.opacity(0.12))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: "music.note")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(.white)
+                    if let data = playbackEngine.currentTrack?.artworkData, let nsImage = NSImage(data: data) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 44, height: 44)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    } else {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.white.opacity(0.12))
+                            .frame(width: 44, height: 44)
+                        Image(systemName: "music.note")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 2) {

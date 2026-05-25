@@ -8,6 +8,8 @@ struct Track: Equatable {
     var isPaused: Bool
     var lastUpdated: Date
     var isEstimatedProgress: Bool = false
+    var artworkData: Data? = nil
+    var artworkId: String? = nil
     
     // Returns the estimated current playback position by interpolating from the last update time
     var currentProgress: TimeInterval {
@@ -24,6 +26,7 @@ struct Track: Equatable {
                lhs.artist == rhs.artist &&
                lhs.isPaused == rhs.isPaused &&
                lhs.isEstimatedProgress == rhs.isEstimatedProgress &&
+               lhs.artworkId == rhs.artworkId &&
                abs(lhs.elapsedTime - rhs.elapsedTime) < 1.0 // Allow slight drift without triggering full reload
     }
 }

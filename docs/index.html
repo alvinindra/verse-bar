@@ -4,9 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Verse Bar — synced lyrics in your macOS menu bar</title>
-  <meta name="description" content="A minimal macOS menu bar app that displays synced lyrics for YouTube Music in the menu bar, a glassmorphic popover, and the MacBook Pro Touch Bar." />
+  <meta name="description" content="A minimal macOS menu bar app that shows synced lyrics for whatever's playing in any browser — in the menu bar, a glassmorphic popover, the MacBook Pro Touch Bar, and a Music Island under the notch. With album art and CJK romanization." />
   <meta property="og:title" content="Verse Bar" />
-  <meta property="og:description" content="Synced YouTube Music lyrics in your macOS menu bar." />
+  <meta property="og:description" content="Browser-agnostic synced lyrics for macOS — with album art and Korean / Japanese / Chinese romanization." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://alvinindra.github.io/verse-bar/" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E%E2%99%AA%3C/text%3E%3C/svg%3E" />
@@ -345,9 +345,11 @@
       <span class="tag">macOS · open source · free</span>
       <h1>Synced lyrics<br/><span class="accent">in your menu bar.</span></h1>
       <p class="lead">
-        Verse Bar streams the current line of YouTube Music straight into the macOS
-        menu bar, a glassmorphic popover, and the MacBook Pro Touch Bar — quietly,
-        without ever interrupting your flow.
+        Verse Bar streams the current lyric of whatever's playing in your browser —
+        Safari, Chrome, Arc, Dia, Brave, you name it — straight into the macOS menu
+        bar, a glassmorphic popover, the MacBook Pro Touch Bar, and a Music Island
+        under the notch. With album art and Korean / Japanese / Chinese romanization
+        built in.
       </p>
       <div>
         <a class="cta" href="https://github.com/alvinindra/verse-bar/releases/latest" rel="noopener">
@@ -400,8 +402,8 @@
         </div>
         <div class="feature">
           <div class="ico">⚡</div>
-          <h3>Source-agnostic</h3>
-          <p>Works with YouTube Music in Safari, Chrome, Arc, and the YTMDesktop companion server on port 9863.</p>
+          <h3>Browser-agnostic</h3>
+          <p>Reads the macOS Now Playing system, so it tracks whatever's playing in Safari, Chrome, Arc, Dia, Brave, Vivaldi, Edge — anything with Media Session — plus the YTMDesktop companion server on port 9863.</p>
         </div>
         <div class="feature">
           <div class="ico">⌁</div>
@@ -422,6 +424,16 @@
           <div class="ico">✓</div>
           <h3>Guided first-run setup</h3>
           <p>A built-in setup window walks you through install location, Automation, and Notification permissions — with deep-links straight into the right System Settings pane.</p>
+        </div>
+        <div class="feature">
+          <div class="ico">◉</div>
+          <h3>Album art</h3>
+          <p>Cover artwork is pulled straight from the Now Playing source and rendered next to the title in the popover and the expanded Music Island. Falls back to a clean placeholder when the source omits it.</p>
+        </div>
+        <div class="feature">
+          <div class="ico">あ</div>
+          <h3>Romanized lyrics</h3>
+          <p>Korean (Hangul), Japanese (Hiragana / Katakana / Kanji), and Chinese (Han) lines are transliterated to Latin and shown under the original — also in the menu bar, Touch Bar, and Music Island so you can read along.</p>
         </div>
       </div>
     </section>

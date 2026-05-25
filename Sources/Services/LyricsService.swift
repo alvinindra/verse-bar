@@ -107,7 +107,7 @@ class LyricsService: ObservableObject {
             do {
                 let data = try Data(contentsOf: cacheFile)
                 let lines = try JSONDecoder().decode([CachedLyricLine].self, from: data)
-                self.lyricLines = lines.map { LyricLine(timestamp: $0.timestamp, text: $0.text) }
+                self.lyricLines = lines.map { LyricLine(timestamp: $0.timestamp, text: $0.text, romanized: $0.romanized ?? Self.romanize($0.text)) }
                 Logger.info("✅ Loaded cached lyrics for \(track.title) (\(self.lyricLines.count) lines)", category: "lyrics")
                 return
             } catch {
@@ -266,7 +266,7 @@ class LyricsService: ObservableObject {
                     self.lyricLines = parsedLines
                     Logger.info("✅ Loaded \(parsedLines.count) lyric lines for \(track.title)", category: "lyrics")
                     // Save to local cache
-                    let cachedLines = parsedLines.map { CachedLyricLine(timestamp: $0.timestamp, text: $0.text) }
+                    let cachedLines = parsedLines.map { CachedLyricLine(timestamp: $0.timestamp, text: $0.text, romanized: $0.romanized) }
                     if let cachedData = try? JSONEncoder().encode(cachedLines) {
                         try? cachedData.write(to: cacheFile)
                         Logger.info("💾 Saved cached lyrics for \(track.title)", category: "lyrics")
@@ -319,13 +319,36 @@ class LyricsService: ObservableObject {
                 let timestamp = minutes * 60.0 + seconds + fractional
                 
                 let text = (trimmed as NSString).substring(with: match.range(at: 4)).trimmingCharacters(in: .whitespacesAndNewlines)
-                
-                lines.append(LyricLine(timestamp: timestamp, text: text))
+
+                lines.append(LyricLine(timestamp: timestamp, text: text, romanized: Self.romanize(text)))
             }
         }
-        
+
         // Sort lines chronologically
         return lines.sorted(by: { $0.timestamp < $1.timestamp })
+    }
+
+    // MARK: - Romanization
+    /// Converts Hangul / Hiragana / Katakana / Han to Latin script via the
+    /// ICU transliterator built into CFStringTransform. Returns nil when the
+    /// input already has no CJK characters or the transform produces no
+    /// change (avoids storing redundant copies).
+    static func romanize(_ text: String) -> String? {
+        let needsTransform = text.unicodeScalars.contains { scalar in
+            let v = scalar.value
+            return (0xAC00...0xD7AF).contains(v) ||  // Hangul Syllables
+                   (0x1100...0x11FF).contains(v) ||  // Hangul Jamo
+                   (0x3040...0x309F).contains(v) ||  // Hiragana
+                   (0x30A0...0x30FF).contains(v) ||  // Katakana
+                   (0x4E00...0x9FFF).contains(v) ||  // CJK Unified Ideographs
+                   (0x3400...0x4DBF).contains(v)     // CJK Extension A
+        }
+        guard needsTransform else { return nil }
+
+        let mutable = NSMutableString(string: text)
+        guard CFStringTransform(mutable, nil, "Any-Latin" as NSString, false) else { return nil }
+        let out = (mutable as String).trimmingCharacters(in: .whitespacesAndNewlines)
+        return out.isEmpty || out == text ? nil : out
     }
     
     private func getCacheSlug(artist: String, title: String) -> String {
@@ -347,4 +370,5 @@ struct LRCLIBResponse: Codable {
 struct CachedLyricLine: Codable {
     let timestamp: TimeInterval
     let text: String
+    let romanized: String?
 }

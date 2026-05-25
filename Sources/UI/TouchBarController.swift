@@ -184,9 +184,21 @@ final class PopoverHostingController: NSHostingController<PopoverView>, NSTouchB
         let text: String
         if !lyricsService.lyricLines.isEmpty,
            let idx = lyricsService.currentLineIndex,
-           idx >= 0, idx < lyricsService.lyricLines.count,
-           !lyricsService.lyricLines[idx].text.isEmpty {
-            text = lyricsService.lyricLines[idx].text
+           idx >= 0, idx < lyricsService.lyricLines.count {
+            let line = lyricsService.lyricLines[idx]
+            let candidate: String
+            if AppSettings.shared.showRomanization, let romanized = line.romanized {
+                candidate = romanized
+            } else {
+                candidate = line.text
+            }
+            if !candidate.isEmpty {
+                text = candidate
+            } else if let track = playbackEngine.currentTrack {
+                text = "\(track.title) — \(track.artist)"
+            } else {
+                text = "Verse Bar"
+            }
         } else if let track = playbackEngine.currentTrack {
             text = "\(track.title) — \(track.artist)"
         } else {

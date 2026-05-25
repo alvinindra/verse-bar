@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Combine
 import UserNotifications
 
@@ -80,7 +81,12 @@ class PlaybackEngine: ObservableObject {
     }
     
     private init() {
-        startPolling()
+        // Give the MediaRemote helper a moment to start streaming so the very
+        // first poll already has Now Playing data and doesn't fall through to
+        // the slower browser-AppleScript path.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.startPolling()
+        }
     }
     
     func startPolling() {
@@ -99,14 +105,25 @@ class PlaybackEngine: ObservableObject {
         Logger.info("Playback Engine polling stopped.", category: "playback")
     }
     
+    private func isApplicationRunning(_ name: String) -> Bool {
+        NSWorkspace.shared.runningApplications.contains { $0.localizedName == name }
+    }
+
     private func poll() {
         guard !isPolling else { return }
         isPolling = true
         
+        // Skip the per-browser AppleScript fallbacks while the MediaRemote
+        // helper is alive — it covers every Media-Session-capable browser
+        // (Arc, Dia, Brave, Chrome, Safari, Vivaldi, etc) without scripting
+        // each one, and `execute javascript` against suspended tabs can hang
+        // the polling loop for minutes.
+        let nowPlayingActive = NowPlayingService.shared.isStreaming()
         let sources: [(Bool, String, (@escaping (Bool) -> Void) -> Void)] = [
-            (settings.trackingArc, "Arc", { self.pollArc(completion: $0) }),
-            (settings.trackingChrome, "Chrome", { self.pollChrome(completion: $0) }),
-            (settings.trackingSafari, "Safari", { self.pollSafari(completion: $0) }),
+            (true, "NowPlaying", { self.pollNowPlaying(completion: $0) }),
+            (!nowPlayingActive && settings.trackingArc, "Arc", { self.pollArc(completion: $0) }),
+            (!nowPlayingActive && settings.trackingChrome, "Chrome", { self.pollChrome(completion: $0) }),
+            (!nowPlayingActive && settings.trackingSafari, "Safari", { self.pollSafari(completion: $0) }),
             (settings.trackingYTMDesktop, "YTMDesktop", { self.pollYTMDesktop(completion: $0) })
         ]
         
@@ -120,7 +137,7 @@ class PlaybackEngine: ObservableObject {
                 }
                 return
             }
-            
+
             let (enabled, name, pollFunc) = sources[index]
             if enabled {
                 pollFunc { [weak self] success in
@@ -139,6 +156,22 @@ class PlaybackEngine: ObservableObject {
         trySource(at: 0)
     }
     
+    // MARK: - System Now Playing (browser-agnostic via MediaRemote)
+    private func pollNowPlaying(completion: @escaping (Bool) -> Void) {
+        guard let info = NowPlayingService.shared.currentInfo() else {
+            completion(false)
+            return
+        }
+        let title = info.title
+        let artist = info.artist.isEmpty ? "Unknown Artist" : info.artist
+        let duration = info.duration > 0 ? info.duration : 300.0
+        Logger.info("🎵 Detected (NowPlaying): \(title) - \(artist) [\(String(format: "%.1f", info.elapsed))/\(String(format: "%.0f", duration))s] paused=\(info.isPaused)", category: "playback")
+        DispatchQueue.main.async {
+            self.updateTrack(title: title, artist: artist, duration: duration, elapsed: info.elapsed, isPaused: info.isPaused, isEstimatedProgress: false, artworkData: info.artworkData, artworkId: info.artworkId)
+            completion(true)
+        }
+    }
+
     // MARK: - YouTube Music Desktop App API
     private func pollYTMDesktop(completion: @escaping (Bool) -> Void) {
         guard let url = URL(string: "http://localhost:9863/query") else {
@@ -191,9 +224,10 @@ class PlaybackEngine: ObservableObject {
     
     // MARK: - Arc Browser
     private func pollArc(completion: @escaping (Bool) -> Void) {
+        guard isApplicationRunning("Arc") else { completion(false); return }
         let escapedJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTMExtractionJS())
         let escapedYTJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTExtractionJS())
-        
+
         let script = """
         tell application "Arc"
             repeat with w in windows
@@ -237,9 +271,10 @@ class PlaybackEngine: ObservableObject {
     
     // MARK: - Google Chrome
     private func pollChrome(completion: @escaping (Bool) -> Void) {
+        guard isApplicationRunning("Google Chrome") else { completion(false); return }
         let escapedJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTMExtractionJS())
         let escapedYTJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTExtractionJS())
-        
+
         let script = """
         tell application "Google Chrome"
             repeat with w in windows
@@ -283,9 +318,10 @@ class PlaybackEngine: ObservableObject {
     
     // MARK: - Safari
     private func pollSafari(completion: @escaping (Bool) -> Void) {
+        guard isApplicationRunning("Safari") else { completion(false); return }
         let escapedJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTMExtractionJS())
         let escapedYTJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTExtractionJS())
-        
+
         let script = """
         tell application "Safari"
             repeat with w in windows
@@ -449,14 +485,20 @@ class PlaybackEngine: ObservableObject {
     }
     
     // MARK: - Track State Management
-    private func updateTrack(title: String, artist: String, duration: Double, elapsed: Double, isPaused: Bool, isEstimatedProgress: Bool) {
+    private func updateTrack(title: String, artist: String, duration: Double, elapsed: Double, isPaused: Bool, isEstimatedProgress: Bool, artworkData: Data? = nil, artworkId: String? = nil) {
         let now = Date()
         if let current = currentTrack, current.title == title, current.artist == artist {
             var updated = current
             updated.isPaused = isPaused
             updated.duration = duration
             updated.isEstimatedProgress = isEstimatedProgress
-            
+            // Only overwrite artwork when source provides one — keeps existing
+            // art across polls where the helper omits it.
+            if let data = artworkData {
+                updated.artworkData = data
+                updated.artworkId = artworkId
+            }
+
             if !isEstimatedProgress {
                 if abs(elapsed - current.elapsedTime) > 0.5 {
                     updated.elapsedTime = elapsed
@@ -472,12 +514,14 @@ class PlaybackEngine: ObservableObject {
                 updated.elapsedTime = current.elapsedTime
                 updated.lastUpdated = current.lastUpdated
             }
-            
+
             if currentTrack != updated {
                 currentTrack = updated
             }
         } else {
-            let newTrack = Track(title: title, artist: artist, duration: duration, elapsedTime: elapsed, isPaused: isPaused, lastUpdated: now, isEstimatedProgress: isEstimatedProgress)
+            var newTrack = Track(title: title, artist: artist, duration: duration, elapsedTime: elapsed, isPaused: isPaused, lastUpdated: now, isEstimatedProgress: isEstimatedProgress)
+            newTrack.artworkData = artworkData
+            newTrack.artworkId = artworkId
             currentTrack = newTrack
             Logger.info("🎵 Track Changed: \(title) - \(artist) (Duration: \(duration)s)", category: "playback")
             triggerNotification(for: newTrack)

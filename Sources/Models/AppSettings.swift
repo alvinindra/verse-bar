@@ -52,6 +52,10 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(hasCompletedOnboarding, forKey: "hasCompletedOnboarding") }
     }
 
+    @Published var showRomanization: Bool {
+        didSet { UserDefaults.standard.set(showRomanization, forKey: "showRomanization") }
+    }
+
     private init() {
         UserDefaults.standard.register(defaults: [
             "showArtist": true,
@@ -65,7 +69,8 @@ class AppSettings: ObservableObject {
             "manualSyncOffset": 0.0,
             "pinPopover": false,
             "showNotchIsland": false,
-            "hasCompletedOnboarding": false
+            "hasCompletedOnboarding": false,
+            "showRomanization": true
         ])
 
         self.showArtist = UserDefaults.standard.bool(forKey: "showArtist")
@@ -80,5 +85,6 @@ class AppSettings: ObservableObject {
         self.pinPopover = UserDefaults.standard.bool(forKey: "pinPopover")
         self.showNotchIsland = UserDefaults.standard.bool(forKey: "showNotchIsland")
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+        self.showRomanization = UserDefaults.standard.bool(forKey: "showRomanization")
     }
 }

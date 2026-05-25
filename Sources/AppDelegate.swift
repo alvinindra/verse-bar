@@ -13,6 +13,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             center.requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
         }
 
+        // Spawn the MediaRemote helper so /usr/bin/swift starts streaming
+        // Now Playing info before the first poll arrives.
+        NowPlayingService.shared.start()
+
         // Initialize StatusItemManager to load the status bar item and start tracking
         _ = StatusItemManager.shared
 

@@ -44,14 +44,23 @@ struct PopoverView: View {
                 if let track = playbackEngine.currentTrack {
                     VStack(spacing: 8) {
                         HStack(spacing: 12) {
-                            // Cover art replacement placeholder
+                            // Cover art — real artwork from MediaRemote when
+                            // available, placeholder otherwise.
                             ZStack {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color.accentColor.opacity(0.15))
-                                    .frame(width: 48, height: 48)
-                                Image(systemName: "music.note")
-                                    .font(.system(size: 20))
-                                    .foregroundColor(.accentColor)
+                                if let data = track.artworkData, let nsImage = NSImage(data: data) {
+                                    Image(nsImage: nsImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 48, height: 48)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                } else {
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color.accentColor.opacity(0.15))
+                                        .frame(width: 48, height: 48)
+                                    Image(systemName: "music.note")
+                                        .font(.system(size: 20))
+                                        .foregroundColor(.accentColor)
+                                }
                             }
                             
                             VStack(alignment: .leading, spacing: 2) {

@@ -186,7 +186,13 @@ class StatusItemManager: NSObject {
            !lyricsService.lyricLines.isEmpty,
            let activeIdx = lyricsService.currentLineIndex,
            activeIdx >= 0 && activeIdx < lyricsService.lyricLines.count {
-            let activeLineText = lyricsService.lyricLines[activeIdx].text
+            let activeLine = lyricsService.lyricLines[activeIdx]
+            let activeLineText: String
+            if settings.showRomanization, let romanized = activeLine.romanized {
+                activeLineText = romanized
+            } else {
+                activeLineText = activeLine.text
+            }
             if !activeLineText.isEmpty {
                 displayString = activeLineText
             }

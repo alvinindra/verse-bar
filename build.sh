@@ -32,6 +32,7 @@ swiftc -sdk "$SDK_PATH" \
     Sources/Models/LyricLine.swift \
     Sources/Models/AppSettings.swift \
     Sources/Services/PlaybackEngine.swift \
+    Sources/Services/NowPlayingService.swift \
     Sources/Services/LyricsService.swift \
     Sources/UI/Components/GlassmorphicView.swift \
     Sources/UI/Components/MarqueeText.swift \
@@ -52,6 +53,10 @@ swiftc -sdk "$SDK_PATH" \
 # 5. Package plist info metadata
 echo "📝 Copying Info.plist metadata..."
 cp Resources/Info.plist "Verse Bar.app/Contents/Info.plist"
+
+# 5b. Copy the MediaRemote helper script — runs under /usr/bin/swift so the
+#     Apple signature satisfies macOS 15.4+ Now Playing restrictions.
+cp Resources/now_playing_helper.swift "Verse Bar.app/Contents/Resources/now_playing_helper.swift"
 
 # 6. Verify and finish
 if [ -f "Verse Bar.app/Contents/MacOS/VerseBar" ]; then

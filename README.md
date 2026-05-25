@@ -2,9 +2,9 @@
 
 > **Landing page:** [alvinindra.github.io/verse-bar](https://alvinindra.github.io/verse-bar/) · **Download:** [latest release](https://github.com/alvinindra/verse-bar/releases/latest)
 
-A macOS menu bar app that displays **synced lyrics** of whatever you're playing on YouTube Music (Safari, Chrome, Arc, or the YouTube Music Desktop app) — in the menu bar, in a popover, on the **MacBook Pro Touch Bar**, and in a Dynamic-Island-style **Music Island** under the notch.
+A macOS menu bar app that displays **synced lyrics** of whatever you're playing in **any browser** (Safari, Chrome, Arc, Dia, Brave, Vivaldi…) or in the YouTube Music Desktop app — in the menu bar, in a popover, on the **MacBook Pro Touch Bar**, and in a Dynamic-Island-style **Music Island** under the notch.
 
-Powered by [LRCLIB](https://lrclib.net) for lyrics and AppleScript for browser introspection.
+Powered by [LRCLIB](https://lrclib.net) for lyrics and the macOS Now Playing system (MediaRemote) for browser-agnostic playback detection.
 
 ---
 
@@ -14,8 +14,10 @@ Powered by [LRCLIB](https://lrclib.net) for lyrics and AppleScript for browser i
 - Current lyric line in the **menu bar** (lyric on left, music icon on right)
 - Current lyric line in the **MacBook Pro Touch Bar** (shown while the popover is open)
 - **Music Island** — Dynamic-Island-style pill under the notch that shows the live lyric and expands on hover for track info + media controls
+- **Browser-agnostic detection** via the macOS Now Playing system — works with any browser that supports the Media Session API (Safari, Chrome, Arc, Dia, Brave, Vivaldi, Edge, …) plus the YouTube Music Desktop App
+- **Album art** pulled straight from the Now Playing source, rendered in the popover and the expanded Music Island
+- **Romanization** for Korean, Japanese, and Chinese lyrics — Hangul / Hiragana / Katakana / Han characters are transliterated to Latin (pinyin with tones) and shown under the original line, in the menu bar, and on the Touch Bar
 - **Guided first-run setup** — a built-in window walks you through install location, Automation, and Notification permissions
-- Source detection across Safari, Chrome, Arc, and the YouTube Music Desktop App (port 9863)
 - Local lyric cache (`~/Library/Application Support/com.versebar.VerseBar/LyricsCache`)
 - Manual sync offset (+/- 0.5s) for tracks whose timing drifts
 - Native track-change notifications
@@ -100,16 +102,19 @@ The Music Island is off by default. Enable it under **Preferences → Menu Bar R
 
 Right-click the menu bar icon → **Preferences…** to toggle:
 
-- Per-browser tracking (Safari, Chrome, Arc, YTM Desktop)
 - Display title / artist / lyric in the menu bar
+- Music Island under the notch
+- **Romanize Korean / Japanese / Chinese lyrics** (Latin transliteration shown under each line)
+- Per-browser AppleScript fallback (Safari, Chrome, Arc) and YTM Desktop polling
 - Manual sync offset
 
 ## How It Works
 
-- `PlaybackEngine` polls each enabled browser every 1.5 s via AppleScript, running a tiny JS snippet inside the YouTube Music tab to extract title / artist / current time / duration / paused state.
-- `LyricsService` queries LRCLIB's `/api/get` endpoint (exact match by artist + title + duration), falling back to `/api/search` if no exact match exists. Results are cached on disk.
+- `NowPlayingService` spawns a small Apple-signed helper script under `/usr/bin/swift` that streams the system Now Playing state (title, artist, elapsed, duration, album artwork) as JSON lines. The helper signature is required because macOS 15.4+ restricts `MRMediaRemoteGetNowPlayingInfo` to Apple-signed callers.
+- `PlaybackEngine` consumes that stream every 1.5 s. Browser-specific AppleScript paths exist as a fallback, but they're skipped automatically while Now Playing is live — so the app stays out of `execute javascript` calls that can stall on suspended tabs.
+- `LyricsService` queries LRCLIB's `/api/get` endpoint (exact match by artist + title + duration), falling back to `/api/search` if no exact match exists. Each line is run through `CFStringTransform "Any-Latin"` to attach a Latin romanization when CJK characters are detected. Results are cached on disk with both the original and romanized text.
 - A 100 ms timer interpolates the active lyric line against the polled playback position plus the user's manual offset.
-- `StatusItemManager` renders the active lyric in the menu bar.
+- `StatusItemManager`, `NotchIslandView`, and the Touch Bar all prefer the romanized line when the toggle is on and a romanization exists; otherwise they fall back to the original text.
 - `PopoverHostingController` vends an `NSTouchBar` whenever the popover is on screen; the bar shows the current lyric on the left and three media-control buttons on the right.
 
 ## Project Layout
@@ -119,11 +124,13 @@ Sources/
 ├── AppDelegate.swift
 ├── main.swift
 ├── Models/         # Track, LyricLine, AppSettings
-├── Services/       # PlaybackEngine, LyricsService
+├── Services/       # PlaybackEngine, LyricsService, NowPlayingService
 ├── UI/             # StatusItemManager, PopoverView, SettingsView, TouchBarController,
 │                   # NotchIslandController/View, OnboardingController/View, Components/
 └── Utilities/      # AppleScriptRunner, Logger, MediaKeys, PermissionHelper
-Resources/Info.plist
+Resources/
+├── Info.plist
+└── now_playing_helper.swift   # Apple-signed swift helper invoked by NowPlayingService
 build.sh
 ```
 
