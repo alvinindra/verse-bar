@@ -427,7 +427,7 @@
     </section>
 
     <section id="install">
-      <h2>Install in 4 steps</h2>
+      <h2>Install in 5 steps</h2>
       <p class="subhead">Drag the app, grant permission, press play.</p>
       <div class="steps">
         <div class="step">
@@ -444,8 +444,16 @@
         </div>
         <div class="step">
           <div>
+            <h3>Bypass Gatekeeper (one time)</h3>
+            <p>Verse Bar is ad-hoc signed but not notarized, so macOS will show <em>"Verse Bar was blocked to protect your Mac."</em> Run this in Terminal to clear it for good:</p>
+            <pre><code>xattr -dr com.apple.quarantine "/Applications/Verse Bar.app"</code></pre>
+            <p>Prefer the GUI? Open the app once, then go to <strong>System Settings → Privacy &amp; Security</strong> and press <strong>Open Anyway</strong>. Either path is one-time only.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div>
             <h3>First launch &amp; permissions</h3>
-            <p>Right-click <strong>Verse Bar</strong> in Applications and choose <strong>Open</strong> (the app is ad-hoc signed, not notarized, so macOS asks once). A built-in <strong>Setup Guide</strong> opens automatically and walks you through Automation and Notification permissions — one tap each, with deep-links to System Settings if anything was denied.</p>
+            <p>A built-in <strong>Setup Guide</strong> opens automatically and walks you through Automation and Notification permissions — one tap each, with deep-links to System Settings if anything was denied.</p>
           </div>
         </div>
         <div class="step">

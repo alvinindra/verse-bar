@@ -85,7 +85,7 @@ struct OnboardingView: View {
     // MARK: - Step 0 — welcome / install location
 
     private var welcomeStep: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 14) {
             stepTitle("Step 1 — Install location")
             stepHint("Verse Bar should run from your Applications folder so macOS keeps permissions stable across updates.")
 
@@ -106,6 +106,38 @@ struct OnboardingView: View {
             }
             .padding(14)
             .background(Color.primary.opacity(0.04).cornerRadius(10))
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "lock.shield")
+                        .foregroundColor(.accentColor)
+                    Text("If macOS said \"Verse Bar was blocked\"")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                }
+                Text("The app is ad-hoc signed but not notarized. Open Terminal and run this command once to clear the warning for good:")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Text("xattr -dr com.apple.quarantine \"/Applications/Verse Bar.app\"")
+                        .font(.system(size: 11, design: .monospaced))
+                        .textSelection(.enabled)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.black.opacity(0.06).cornerRadius(6))
+                    Button("Copy") {
+                        let pb = NSPasteboard.general
+                        pb.clearContents()
+                        pb.setString("xattr -dr com.apple.quarantine \"/Applications/Verse Bar.app\"", forType: .string)
+                    }
+                    .controlSize(.small)
+                }
+                Text("Or open the app once, then go to System Settings → Privacy & Security → Open Anyway.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+            .padding(12)
+            .background(Color.accentColor.opacity(0.06).cornerRadius(10))
 
             Spacer()
         }

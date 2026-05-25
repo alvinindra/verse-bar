@@ -31,7 +31,31 @@ Powered by [LRCLIB](https://lrclib.net) for lyrics and AppleScript for browser i
 
 **Easiest:** download the latest `.dmg` from the [releases page](https://github.com/alvinindra/verse-bar/releases/latest), double-click it, and drag **Verse Bar** onto the **Applications** shortcut.
 
-The app is ad-hoc signed but not notarized, so on first launch macOS will warn "developer cannot be verified." Right-click the app in `/Applications` and choose **Open** to allow it once.
+### Bypassing the "Verse Bar was blocked" warning
+
+The app is ad-hoc signed but **not notarized** (notarization requires a paid Apple Developer account), so on first launch macOS Gatekeeper shows:
+
+> *"Verse Bar" was blocked to protect your Mac.*
+> *Apple could not verify "Verse Bar" is free of malware…*
+
+Pick whichever bypass you prefer — both are safe and give the same result:
+
+**Option A — terminal one-liner (recommended, works everywhere):**
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Verse Bar.app"
+```
+
+That removes the download-quarantine attribute so macOS stops warning. Double-click the app afterwards and it opens normally.
+
+**Option B — System Settings (GUI):**
+
+1. Try to open the app once and dismiss the warning.
+2. Open **System Settings → Privacy & Security**.
+3. Scroll to the security section and click **Open Anyway** next to *"Verse Bar" was blocked…*.
+4. Confirm with your password.
+
+After either option, every future launch is silent — you only do this once.
 
 ## Build from source
 

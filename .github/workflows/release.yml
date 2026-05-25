@@ -77,15 +77,25 @@ jobs:
           body: |
             ## Install
 
-            **Recommended:** download the `.dmg`, double-click, then drag **Verse Bar** onto the **Applications** shortcut.
+            1. Download the `.dmg` below, double-click to mount it.
+            2. Drag **Verse Bar** onto the **Applications** shortcut.
+            3. Bypass Gatekeeper (one-time — the app is ad-hoc signed but not notarized, so macOS will show *"Verse Bar was blocked to protect your Mac"*). Pick one:
 
-            On first launch macOS will warn that the developer can't be verified — right-click the app and choose **Open** to bypass (the app is ad-hoc signed, not notarized).
+            **Option A — terminal one-liner (fastest):**
+
+            ```bash
+            xattr -dr com.apple.quarantine "/Applications/Verse Bar.app"
+            ```
+
+            **Option B — GUI:** open the app once, then go to **System Settings → Privacy & Security** and click **Open Anyway**.
+
+            4. Launch the app. The built-in **Setup Guide** walks you through Automation and Notification permissions automatically.
 
             ### Files
 
             | File | Notes |
             |---|---|
-            | `VerseBar-${{ github.ref_name }}.dmg` | Recommended — drag-to-install disk image |
+            | `VerseBar-${{ github.ref_name }}.dmg` | Recommended — styled drag-to-install disk image |
             | `VerseBar-${{ github.ref_name }}.zip` | Plain zip of the `.app` bundle |
             | `*.sha256` | Checksums |
           files: |
