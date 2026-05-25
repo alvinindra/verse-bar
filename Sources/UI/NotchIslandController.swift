@@ -13,23 +13,40 @@ import Combine
 final class NotchIslandController: NSObject {
     static let shared = NotchIslandController()
 
+    /// View-model is owned by the controller so hover state is single-sourced
+    /// and we can absorb edge ping-pong with a debounce before resizing.
+    final class ViewModel: ObservableObject {
+        @Published var isExpanded: Bool = false
+    }
+
     private var panel: NSPanel?
     private var hostingView: NSHostingView<NotchIslandView>?
     private var cancellables = Set<AnyCancellable>()
+    private let viewModel = ViewModel()
 
     private let settings = AppSettings.shared
     private let playbackEngine = PlaybackEngine.shared
 
     /// Compact pill dimensions (excluding any notch reservation).
-    private let compactWidth: CGFloat = 240
     private let compactBodyHeight: CGFloat = 30
     /// Expanded pill dimensions.
-    private let expandedWidth: CGFloat = 520
     private let expandedBodyHeight: CGFloat = 96
+    /// Minimum pill widths (further widened on notched displays so the pill
+    /// extends comfortably past the physical notch).
+    private let minCompactWidth: CGFloat = 260
+    private let minExpandedWidth: CGFloat = 520
+    /// Lateral overhang each side of the physical notch.
+    private let notchOverhang: CGFloat = 44
 
     /// Resolved notch metrics for the active screen.
     private var notchHeight: CGFloat = 0
     private var notchWidth: CGFloat = 0
+
+    /// Debounce work item for hover-out → collapse.
+    private var collapseWorkItem: DispatchWorkItem?
+    /// Delay before collapsing after pointer leaves — absorbs spurious
+    /// hover toggles caused by SwiftUI re-layout during resize.
+    private let collapseDelay: TimeInterval = 0.18
 
     private override init() {
         super.init()
@@ -66,7 +83,8 @@ final class NotchIslandController: NSObject {
 
     @objc private func screenParametersChanged() {
         guard panel != nil else { return }
-        repositionPanel()
+        resolveNotchMetrics()
+        repositionPanel(expanded: viewModel.isExpanded)
     }
 
     // MARK: - Visibility
@@ -77,6 +95,9 @@ final class NotchIslandController: NSObject {
             ensurePanel()
             panel?.orderFrontRegardless()
         } else {
+            collapseWorkItem?.cancel()
+            collapseWorkItem = nil
+            viewModel.isExpanded = false
             panel?.orderOut(nil)
         }
     }
@@ -103,13 +124,14 @@ final class NotchIslandController: NSObject {
         panel.isMovableByWindowBackground = false
         panel.ignoresMouseEvents = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.animationBehavior = .utilityWindow
+        panel.animationBehavior = .none
 
         let view = NotchIslandView(
+            viewModel: viewModel,
             notchWidth: notchWidth,
             notchHeight: notchHeight,
             onHoverChange: { [weak self] inside in
-                self?.repositionPanel(expanded: inside)
+                self?.handleHoverChange(inside)
             }
         )
         let host = NSHostingView(rootView: view)
@@ -121,6 +143,27 @@ final class NotchIslandController: NSObject {
         self.hostingView = host
     }
 
+    // MARK: - Hover handling
+
+    private func handleHoverChange(_ inside: Bool) {
+        if inside {
+            collapseWorkItem?.cancel()
+            collapseWorkItem = nil
+            guard !viewModel.isExpanded else { return }
+            viewModel.isExpanded = true
+            repositionPanel(expanded: true)
+        } else {
+            collapseWorkItem?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self = self else { return }
+                self.viewModel.isExpanded = false
+                self.repositionPanel(expanded: false)
+            }
+            collapseWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + collapseDelay, execute: work)
+        }
+    }
+
     // MARK: - Notch detection
 
     private func resolveNotchMetrics() {
@@ -130,8 +173,6 @@ final class NotchIslandController: NSObject {
             let topInset = s.safeAreaInsets.top
             if topInset > 0 {
                 notchHeight = topInset
-                // Width between the left/right auxiliary areas — i.e. the
-                // physical notch cutout width.
                 if let left = s.auxiliaryTopLeftArea, let right = s.auxiliaryTopRightArea {
                     let gap = right.minX - left.maxX
                     notchWidth = max(gap, 200)
@@ -142,8 +183,6 @@ final class NotchIslandController: NSObject {
             }
         }
 
-        // Non-notched display: no reserved area, render the pill below the
-        // menu bar as a regular floating island.
         notchHeight = 0
         notchWidth = 0
     }
@@ -154,19 +193,22 @@ final class NotchIslandController: NSObject {
         let screen = NSScreen.main ?? NSScreen.screens.first ?? NSScreen.screens[0]
         let screenFrame = screen.frame
 
-        let width = expanded ? expandedWidth : compactWidth
+        let baseWidth = expanded ? minExpandedWidth : minCompactWidth
+        // On notched displays widen the pill so it clearly overhangs the notch.
+        let width = notchHeight > 0
+            ? max(baseWidth, notchWidth + notchOverhang * 2)
+            : baseWidth
+
         let bodyHeight = expanded ? expandedBodyHeight : compactBodyHeight
         let totalHeight = notchHeight + bodyHeight
 
         let x = screenFrame.midX - width / 2
         let y: CGFloat
         if notchHeight > 0 {
-            // Anchor the top of the pill to the very top of the screen so
-            // the reserved notch region inside the pill aligns with the
-            // physical notch.
+            // Top of pill flush with top of screen so the reserved notch
+            // region inside the pill aligns with the physical notch.
             y = screenFrame.maxY - totalHeight
         } else {
-            // No notch: dock just below the menu bar.
             let menuBarBottom = screen.visibleFrame.maxY
             y = menuBarBottom - bodyHeight - 6
         }
@@ -174,9 +216,12 @@ final class NotchIslandController: NSObject {
         return NSRect(x: x, y: y, width: width, height: totalHeight)
     }
 
-    private func repositionPanel(expanded: Bool = false) {
+    private func repositionPanel(expanded: Bool) {
         guard let panel = panel else { return }
         let frame = computeFrame(expanded: expanded)
-        panel.setFrame(frame, display: true, animate: true)
+        // No frame animation — SwiftUI handles the content cross-fade. Cocoa
+        // frame animation racing with SwiftUI's onHover was the source of the
+        // grow/shrink flicker loop.
+        panel.setFrame(frame, display: true, animate: false)
     }
 }

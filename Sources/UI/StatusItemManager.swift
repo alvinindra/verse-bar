@@ -145,24 +145,39 @@ class StatusItemManager: NSObject {
     
     private func showContextMenu() {
         let menu = NSMenu()
-        
+
         let prefsItem = NSMenuItem(title: "Preferences...", action: #selector(openSettings), keyEquivalent: ",")
         prefsItem.target = self
         menu.addItem(prefsItem)
-        
+
+        let updateItem = NSMenuItem(title: updateMenuItemTitle(), action: #selector(checkForUpdates), keyEquivalent: "")
+        updateItem.target = self
+        menu.addItem(updateItem)
+
         menu.addItem(NSMenuItem.separator())
-        
+
         let quitItem = NSMenuItem(title: "Quit Verse Bar", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
-        
+
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil // Reset so next left-click opens popover
     }
-    
+
+    private func updateMenuItemTitle() -> String {
+        if case .updateAvailable(let latest, _, _) = UpdateChecker.shared.state {
+            return "Update Available — v\(latest)…"
+        }
+        return "Check for Updates…"
+    }
+
     @objc private func openSettings() {
         NotificationCenter.default.post(name: Notification.Name("ShowSettingsWindow"), object: nil)
+    }
+
+    @objc private func checkForUpdates() {
+        UpdateChecker.shared.checkManually()
     }
     
     @objc private func quitApp() {

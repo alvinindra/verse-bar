@@ -2,7 +2,16 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var settings = AppSettings.shared
-    
+    @State private var updateStatus: String = ""
+    @State private var isCheckingUpdate: Bool = false
+
+    private var appVersion: String {
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "—"
+    }
+    private var buildNumber: String {
+        (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "—"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Elegant top gradient bar
@@ -93,6 +102,59 @@ struct SettingsView: View {
                         .background(Color.primary.opacity(0.03).cornerRadius(10))
                     }
                     
+                    // App version + update check
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("ABOUT VERSE BAR")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(.secondary)
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Version \(appVersion) (build \(buildNumber))")
+                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    if !updateStatus.isEmpty {
+                                        Text(updateStatus)
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                Button(action: {
+                                    isCheckingUpdate = true
+                                    updateStatus = "Checking…"
+                                    UpdateChecker.shared.checkManually()
+                                }) {
+                                    Text(isCheckingUpdate ? "Checking…" : "Check for Updates")
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .disabled(isCheckingUpdate)
+                            }
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.primary.opacity(0.03).cornerRadius(10))
+                        .onReceive(NotificationCenter.default.publisher(for: UpdateChecker.updateStateChanged)) { _ in
+                            switch UpdateChecker.shared.state {
+                            case .idle:
+                                isCheckingUpdate = false
+                            case .checking:
+                                isCheckingUpdate = true
+                                updateStatus = "Checking…"
+                            case .upToDate(let current):
+                                isCheckingUpdate = false
+                                updateStatus = "Up to date (v\(current))."
+                            case .updateAvailable(let latest, _, _):
+                                isCheckingUpdate = false
+                                updateStatus = "Update available — v\(latest)."
+                            case .failed(let message):
+                                isCheckingUpdate = false
+                                updateStatus = "Check failed: \(message)"
+                            }
+                        }
+                    }
+
                     // Realtime JS Timing Guide Section
                     VStack(alignment: .leading, spacing: 12) {
                         Text("💡 REALTIME LYRIC TIMING GUIDE")

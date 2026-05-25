@@ -7,6 +7,7 @@ import SwiftUI
 struct NotchIslandView: View {
     @ObservedObject var playbackEngine = PlaybackEngine.shared
     @ObservedObject var lyricsService = LyricsService.shared
+    @ObservedObject var viewModel: NotchIslandController.ViewModel
 
     /// Width carved out by the physical notch (used to keep content clear of it).
     let notchWidth: CGFloat
@@ -16,11 +17,9 @@ struct NotchIslandView: View {
     /// can resize between compact and expanded layouts.
     var onHoverChange: (Bool) -> Void = { _ in }
 
-    @State private var hovering = false
-
-    private var isExpanded: Bool { hovering }
-
     @ObservedObject private var settings = AppSettings.shared
+
+    private var isExpanded: Bool { viewModel.isExpanded }
 
     private var currentLyric: String? {
         guard !lyricsService.lyricLines.isEmpty,
@@ -48,22 +47,23 @@ struct NotchIslandView: View {
                 // Reserve space for the physical notch at the top center.
                 Color.clear.frame(height: max(notchHeight - 2, 0))
 
-                if isExpanded {
-                    expandedContent
-                        .padding(.horizontal, 14)
-                        .padding(.bottom, 12)
-                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                } else {
-                    compactContent
-                        .padding(.horizontal, 14)
-                        .padding(.bottom, 6)
-                        .transition(.opacity)
+                Group {
+                    if isExpanded {
+                        expandedContent
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 12)
+                    } else {
+                        compactContent
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 6)
+                    }
                 }
+                .frame(maxWidth: .infinity)
             }
         }
-        .animation(.spring(response: 0.35, dampingFraction: 0.78), value: isExpanded)
+        .animation(.easeInOut(duration: 0.16), value: isExpanded)
+        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .onHover { inside in
-            hovering = inside
             onHoverChange(inside)
         }
     }

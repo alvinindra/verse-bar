@@ -33,6 +33,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             OnboardingController.shared.showIfNeeded()
         }
 
+        // Quietly check for a newer release on launch. Surface results only
+        // if an update is actually available (the menu will reflect state).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            UpdateChecker.shared.check(manual: false)
+        }
+
         Logger.info("Verse Bar application launched.", category: "general")
     }
 
