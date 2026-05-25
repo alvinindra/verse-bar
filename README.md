@@ -2,7 +2,7 @@
 
 > **Landing page:** [alvinindra.github.io/verse-bar](https://alvinindra.github.io/verse-bar/) · **Download:** [latest release](https://github.com/alvinindra/verse-bar/releases/latest)
 
-A macOS menu bar app that displays **synced lyrics** of whatever you're playing on YouTube Music (Safari, Chrome, Arc, or the YouTube Music Desktop app) — in the menu bar, in a popover, and on the **MacBook Pro Touch Bar**.
+A macOS menu bar app that displays **synced lyrics** of whatever you're playing on YouTube Music (Safari, Chrome, Arc, or the YouTube Music Desktop app) — in the menu bar, in a popover, on the **MacBook Pro Touch Bar**, and in a Dynamic-Island-style **Music Island** under the notch.
 
 Powered by [LRCLIB](https://lrclib.net) for lyrics and AppleScript for browser introspection.
 
@@ -13,6 +13,8 @@ Powered by [LRCLIB](https://lrclib.net) for lyrics and AppleScript for browser i
 - Real-time synced lyrics scroll in a glassmorphic popover
 - Current lyric line in the **menu bar** (lyric on left, music icon on right)
 - Current lyric line in the **MacBook Pro Touch Bar** (shown while the popover is open)
+- **Music Island** — Dynamic-Island-style pill under the notch that shows the live lyric and expands on hover for track info + media controls
+- **Guided first-run setup** — a built-in window walks you through install location, Automation, and Notification permissions
 - Source detection across Safari, Chrome, Arc, and the YouTube Music Desktop App (port 9863)
 - Local lyric cache (`~/Library/Application Support/com.versebar.VerseBar/LyricsCache`)
 - Manual sync offset (+/- 0.5s) for tracks whose timing drifts
@@ -44,11 +46,15 @@ The script invokes `swiftc` directly — no Xcode project needed.
 
 ## First-Run Setup
 
-1. Launch `Verse Bar.app`.
-2. macOS will prompt for **Automation** permission the first time the app tries to talk to your browser. Grant it:
-   - **System Settings → Privacy & Security → Automation → Verse Bar** → enable Safari / Google Chrome / Arc.
-3. macOS will prompt for **Notifications** permission for now-playing alerts (optional).
-4. Play a track on `music.youtube.com` in a supported browser. The lyric should appear in the menu bar within ~1.5 s.
+The app opens a **guided setup window** the first time you launch it. It walks you through three checks:
+
+1. **Install location** — confirms the app is running from `/Applications` (move it there first if not, so macOS doesn't reset permissions on each launch).
+2. **Automation** — one tap per browser (Safari / Chrome / Arc) fires the macOS Automation consent prompt. If you accidentally denied it, the window deep-links you to **System Settings → Privacy & Security → Automation**.
+3. **Notifications (optional)** — banner when the track changes.
+
+Then play a track on `music.youtube.com` in a supported browser; the lyric appears in the menu bar within ~1.5 s.
+
+You can re-open the guide any time from **Preferences → Re-run Setup Guide**.
 
 If you're using the YouTube Music Desktop App, enable its **Remote Control / Companion Server** on port `9863`. No AppleScript permission is needed in that case.
 
@@ -57,6 +63,12 @@ If you're using the YouTube Music Desktop App, enable its **Remote Control / Com
 Click the menu bar icon to open the popover. While the popover is open, the Touch Bar shows the current lyric on the left and tappable Previous / Play-Pause / Next buttons on the right.
 
 **Keep the Touch Bar lyric visible across app switches** — click the pin icon in the popover header. When pinned, the popover stays open even when you switch apps, so the Touch Bar lyric (and controls) remain visible. Unpin to return to the default transient behavior.
+
+### Music Island (Dynamic-Island-style overlay)
+
+A floating black pill that docks under the notch (or top-center on non-notch Macs) and shows the current synced lyric line. Hover the pill to expand it — it grows to reveal the track title / artist and tappable previous / play-pause / next controls.
+
+The Music Island is off by default. Enable it under **Preferences → Menu Bar Render Options → Show Music Island**. The pill auto-hides whenever nothing is playing.
 
 > **Why not an always-visible Control Strip icon?** macOS Sequoia (15.x) silently filters third-party tray items registered with `addSystemTrayItem:` + `DFRElementSetControlStripPresenceForIdentifier` unless the binary is signed with an Apple Developer ID and notarized. This project ships ad-hoc signed (no paid Apple Developer account), so the ambient Control Strip path is not viable here. Apps that achieve persistent Touch Bar lyrics — LyricsX, BetterTouchTool, Pock — all rely on either Developer ID signing + notarization or a TouchBarServer replacement. The Pin toggle is the supported workaround inside this project's scope.
 
@@ -84,8 +96,9 @@ Sources/
 ├── main.swift
 ├── Models/         # Track, LyricLine, AppSettings
 ├── Services/       # PlaybackEngine, LyricsService
-├── UI/             # StatusItemManager, PopoverView, SettingsView, TouchBarController, Components/
-└── Utilities/      # AppleScriptRunner, Logger
+├── UI/             # StatusItemManager, PopoverView, SettingsView, TouchBarController,
+│                   # NotchIslandController/View, OnboardingController/View, Components/
+└── Utilities/      # AppleScriptRunner, Logger, MediaKeys, PermissionHelper
 Resources/Info.plist
 build.sh
 ```

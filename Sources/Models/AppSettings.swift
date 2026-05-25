@@ -44,6 +44,14 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(pinPopover, forKey: "pinPopover") }
     }
 
+    @Published var showNotchIsland: Bool {
+        didSet { UserDefaults.standard.set(showNotchIsland, forKey: "showNotchIsland") }
+    }
+
+    @Published var hasCompletedOnboarding: Bool {
+        didSet { UserDefaults.standard.set(hasCompletedOnboarding, forKey: "hasCompletedOnboarding") }
+    }
+
     private init() {
         UserDefaults.standard.register(defaults: [
             "showArtist": true,
@@ -55,7 +63,9 @@ class AppSettings: ObservableObject {
             "trackingArc": true,
             "trackingYTMDesktop": true,
             "manualSyncOffset": 0.0,
-            "pinPopover": false
+            "pinPopover": false,
+            "showNotchIsland": false,
+            "hasCompletedOnboarding": false
         ])
 
         self.showArtist = UserDefaults.standard.bool(forKey: "showArtist")
@@ -68,5 +78,7 @@ class AppSettings: ObservableObject {
         self.trackingYTMDesktop = UserDefaults.standard.bool(forKey: "trackingYTMDesktop")
         self.manualSyncOffset = UserDefaults.standard.double(forKey: "manualSyncOffset")
         self.pinPopover = UserDefaults.standard.bool(forKey: "pinPopover")
+        self.showNotchIsland = UserDefaults.standard.bool(forKey: "showNotchIsland")
+        self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
     }
 }

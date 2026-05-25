@@ -6,23 +6,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Request user permission for native track change notifications
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
-            if granted {
-                Logger.info("System notification authorization granted.", category: "general")
-            } else if let error = error {
-                Logger.error("System notification authorization error", category: "general", error: error)
-            }
+        // Notification authorization is handled by the onboarding flow on
+        // first launch. After that we no-op — the user already made a choice.
+        if AppSettings.shared.hasCompletedOnboarding {
+            let center = UNUserNotificationCenter.current()
+            center.requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
         }
-        
+
         // Initialize StatusItemManager to load the status bar item and start tracking
         _ = StatusItemManager.shared
 
+        // Initialize the Music Island overlay (it is hidden until the user
+        // enables the toggle in Preferences and something is playing).
+        _ = NotchIslandController.shared
+
         // Observe window presentation requests
         NotificationCenter.default.addObserver(self, selector: #selector(showSettingsWindow), name: Notification.Name("ShowSettingsWindow"), object: nil)
-        
+        NotificationCenter.default.addObserver(self, selector: #selector(showOnboardingWindow), name: Notification.Name("ShowOnboardingWindow"), object: nil)
+
+        // Show the first-run setup window if the user hasn't finished it.
+        DispatchQueue.main.async {
+            OnboardingController.shared.showIfNeeded()
+        }
+
         Logger.info("Verse Bar application launched.", category: "general")
+    }
+
+    @objc func showOnboardingWindow() {
+        OnboardingController.shared.show()
     }
     
     @objc func showSettingsWindow() {

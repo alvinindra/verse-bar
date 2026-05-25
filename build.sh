@@ -40,9 +40,14 @@ swiftc -sdk "$SDK_PATH" \
     Sources/UI/SettingsView.swift \
     Sources/UI/StatusItemManager.swift \
     Sources/UI/TouchBarController.swift \
+    Sources/UI/NotchIslandView.swift \
+    Sources/UI/NotchIslandController.swift \
+    Sources/UI/OnboardingView.swift \
+    Sources/UI/OnboardingController.swift \
     Sources/Utilities/AppleScriptRunner.swift \
     Sources/Utilities/Logger.swift \
-    Sources/Utilities/MediaKeys.swift
+    Sources/Utilities/MediaKeys.swift \
+    Sources/Utilities/PermissionHelper.swift
 
 # 5. Package plist info metadata
 echo "📝 Copying Info.plist metadata..."

@@ -39,6 +39,7 @@ struct SettingsView: View {
                             Toggle("Show Artist Name", isOn: $settings.showArtist)
                             Toggle("Show Track Title", isOn: $settings.showTitle)
                             Toggle("Show Realtime Lyrics Line", isOn: $settings.showLyrics)
+                            Toggle("Show Music Island (Dynamic Island under notch)", isOn: $settings.showNotchIsland)
                         }
                         .toggleStyle(.checkbox)
                         .padding(14)
@@ -75,6 +76,15 @@ struct SettingsView: View {
                                 .onChange(of: settings.launchAtLogin) { _, newValue in
                                     configureLoginItem(enabled: newValue)
                                 }
+                            HStack {
+                                Button("Re-run Setup Guide") {
+                                    NotificationCenter.default.post(name: Notification.Name("ShowOnboardingWindow"), object: nil)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                Spacer()
+                            }
+                            .padding(.top, 4)
                         }
                         .toggleStyle(.checkbox)
                         .padding(14)
