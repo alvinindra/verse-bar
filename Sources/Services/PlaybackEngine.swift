@@ -162,6 +162,50 @@ class PlaybackEngine: ObservableObject {
             completion(false)
             return
         }
+
+        // YouTube-only gate: MediaRemote reports *any* media source (Spotify,
+        // Apple Music, a random site with audio, etc). We only want YouTube.
+        let bundle = info.bundleIdentifier
+
+        guard let bundle = bundle else {
+            // Helper couldn't resolve the source app (older macOS lacking the
+            // PID symbol). Can't filter — degrade gracefully and accept rather
+            // than hiding everything on those systems.
+            Logger.info("⚠️ Now Playing source unknown (no bundle id) — accepting", category: "playback")
+            acceptNowPlaying(info, completion: completion)
+            return
+        }
+
+        if PlaybackEngine.isYouTubeDesktopBundle(bundle) {
+            acceptNowPlaying(info, completion: completion)
+            return
+        }
+
+        if let appName = PlaybackEngine.browserAppName(for: bundle) {
+            // Browser source — only accept when a YouTube tab is actually open.
+            // Guards against other websites (Netflix, SoundCloud, …) playing audio.
+            verifyYouTubeTab(inApp: appName) { [weak self] verdict in
+                switch verdict {
+                case .youtube:
+                    self?.acceptNowPlaying(info, completion: completion)
+                case .notYouTube:
+                    Logger.info("⏭️ \(appName) Now Playing is not a YouTube tab — ignoring", category: "playback")
+                    completion(false)
+                case .cannotVerify:
+                    // Automation not granted / app not scriptable — degrade
+                    // gracefully and accept rather than hiding a real track.
+                    self?.acceptNowPlaying(info, completion: completion)
+                }
+            }
+            return
+        }
+
+        // Known non-YouTube app (Spotify, Apple Music, podcast/video apps, …).
+        Logger.info("⏭️ Ignoring non-YouTube Now Playing source: \(bundle)", category: "playback")
+        completion(false)
+    }
+
+    private func acceptNowPlaying(_ info: NowPlayingInfo, completion: @escaping (Bool) -> Void) {
         let title = info.title
         let artist = info.artist.isEmpty ? "Unknown Artist" : info.artist
         let duration = info.duration > 0 ? info.duration : 300.0
@@ -169,6 +213,60 @@ class PlaybackEngine: ObservableObject {
         DispatchQueue.main.async {
             self.updateTrack(title: title, artist: artist, duration: duration, elapsed: info.elapsed, isPaused: info.isPaused, isEstimatedProgress: false, artworkData: info.artworkData, artworkId: info.artworkId)
             completion(true)
+        }
+    }
+
+    // MARK: - YouTube Source Classification
+
+    /// True for the YouTube Music Desktop app (any known bundle-id variant).
+    private static func isYouTubeDesktopBundle(_ bundle: String) -> Bool {
+        let b = bundle.lowercased()
+        return b.contains("youtube-music") || b.contains("ytmdesktop")
+    }
+
+    /// Maps a Now Playing bundle id (possibly a renderer/helper process) to the
+    /// scriptable browser application name, or nil if it's not a known browser.
+    /// Matches by token so helper bundle ids like `com.google.Chrome.helper`
+    /// still resolve to the parent browser.
+    private static func browserAppName(for bundle: String) -> String? {
+        let b = bundle.lowercased()
+        if b.contains("com.apple.safari")            { return "Safari" }
+        if b.contains("com.google.chrome")           { return "Google Chrome" }
+        if b.contains("thebrowser.dia")              { return "Dia" }
+        if b.contains("thebrowser.browser")          { return "Arc" }
+        if b.contains("brave")                       { return "Brave Browser" }
+        if b.contains("edgemac") || b.contains("microsoft.edge") { return "Microsoft Edge" }
+        if b.contains("vivaldi")                     { return "Vivaldi" }
+        if b.contains("operasoftware.opera")         { return "Opera" }
+        return nil
+    }
+
+    private enum YouTubeTabVerdict { case youtube, notYouTube, cannotVerify }
+
+    /// Reads tab URLs (no JS execution → no suspended-tab hang) of the given
+    /// browser to confirm a YouTube tab is open before trusting MediaRemote.
+    private func verifyYouTubeTab(inApp appName: String, completion: @escaping (YouTubeTabVerdict) -> Void) {
+        let script = """
+        tell application "\(appName)"
+            repeat with w in windows
+                try
+                    repeat with t in tabs of w
+                        try
+                            if (URL of t) contains "youtube.com" then return "YT"
+                        end try
+                    end repeat
+                end try
+            end repeat
+        end tell
+        return "NO"
+        """
+        AppleScriptRunner.run(script, timeout: 2.0) { result in
+            switch result {
+            case .success(let out):
+                completion(out.contains("YT") ? .youtube : .notYouTube)
+            case .failure:
+                completion(.cannotVerify)
+            }
         }
     }
 

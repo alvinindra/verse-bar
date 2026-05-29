@@ -119,12 +119,13 @@ struct PopoverView: View {
                             .frame(maxHeight: .infinity)
                         } else if lyricsService.lyricLines.isEmpty {
                             VStack(spacing: 8) {
-                                Image(systemName: "quote.bubble.fill")
+                                Image(systemName: lyricsStatusIcon)
                                     .font(.system(size: 24))
                                     .foregroundColor(.secondary)
-                                Text("No lyrics found")
+                                Text(lyricsStatusMessage)
                                     .font(.system(size: 12, design: .rounded))
                                     .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
                             }
                             .frame(maxHeight: .infinity)
                         } else {
@@ -250,6 +251,26 @@ struct PopoverView: View {
         .frame(width: 320)
     }
     
+    /// Message shown in the popup's lyrics area when there are no synced lines.
+    /// This is the *only* place "Synced lyrics not found" appears — the menu
+    /// bar just shows its icon.
+    private var lyricsStatusMessage: String {
+        switch lyricsService.status {
+        case .notFound:          return "Synced lyrics not found"
+        case .unavailableOffline: return "Lyrics unavailable offline"
+        case .error:             return "Couldn't load lyrics"
+        default:                 return "No lyrics found"
+        }
+    }
+
+    private var lyricsStatusIcon: String {
+        switch lyricsService.status {
+        case .unavailableOffline: return "wifi.slash"
+        case .error:             return "exclamationmark.triangle.fill"
+        default:                 return "quote.bubble.fill"
+        }
+    }
+
     private func openSettings() {
         NSApp.activate(ignoringOtherApps: true)
         // Post a notification to show the settings window

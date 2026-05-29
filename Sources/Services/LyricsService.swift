@@ -1,13 +1,27 @@
 import Foundation
 import Combine
 
+/// Outcome of a lyrics lookup. Drives UI without polluting `lyricLines` with
+/// fake placeholder rows — the menu bar shows none of these, only the popup.
+enum LyricsStatus: Equatable {
+    case idle              // no track / not started
+    case searching         // fetch in flight
+    case found             // synced lyrics loaded
+    case notFound          // no synced lyrics for this track
+    case unavailableOffline
+    case error             // network / parse failure
+}
+
 class LyricsService: ObservableObject {
     static let shared = LyricsService()
-    
+
     @Published var lyricLines: [LyricLine] = []
     @Published var currentLineIndex: Int?
     @Published var isFetching = false
     @Published var offlineMode = false
+    /// Lookup outcome for the current track. The menu bar never renders this —
+    /// "not found" etc. is surfaced only in the popup.
+    @Published var status: LyricsStatus = .idle
     
     private var playbackEngine = PlaybackEngine.shared
     private var cancellables = Set<AnyCancellable>()
@@ -46,20 +60,22 @@ class LyricsService: ObservableObject {
         guard let track = track else {
             self.lyricLines = []
             self.currentLineIndex = nil
+            self.status = .idle
             self.lastTrackTitle = ""
             self.lastTrackArtist = ""
             return
         }
-        
+
         // Only fetch if track title or artist has changed
         if track.title == lastTrackTitle && track.artist == lastTrackArtist {
             return
         }
-        
+
         self.lastTrackTitle = track.title
         self.lastTrackArtist = track.artist
         self.lyricLines = []
         self.currentLineIndex = nil
+        self.status = .searching
         
         Logger.info("📀 Fetching lyrics for: \(track.title) - \(track.artist)", category: "lyrics")
         fetchLyrics(for: track)
@@ -108,6 +124,7 @@ class LyricsService: ObservableObject {
                 let data = try Data(contentsOf: cacheFile)
                 let lines = try JSONDecoder().decode([CachedLyricLine].self, from: data)
                 self.lyricLines = lines.map { LyricLine(timestamp: $0.timestamp, text: $0.text, romanized: $0.romanized ?? Self.romanize($0.text)) }
+                self.status = self.lyricLines.isEmpty ? .notFound : .found
                 Logger.info("✅ Loaded cached lyrics for \(track.title) (\(self.lyricLines.count) lines)", category: "lyrics")
                 return
             } catch {
@@ -117,7 +134,8 @@ class LyricsService: ObservableObject {
         
         // Offline check
         if offlineMode {
-            self.lyricLines = [LyricLine(timestamp: 0.0, text: "Lyrics unavailable offline")]
+            self.lyricLines = []
+            self.status = .unavailableOffline
             return
         }
         
@@ -205,15 +223,17 @@ class LyricsService: ObservableObject {
             
             if error != nil {
                 DispatchQueue.main.async {
-                    self.lyricLines = [LyricLine(timestamp: 0.0, text: "Lyrics not found")]
+                    self.lyricLines = []
+                    self.status = .error
                 }
                 return
             }
-            
+
             guard let data = data,
                   let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
                 DispatchQueue.main.async {
-                    self.lyricLines = [LyricLine(timestamp: 0.0, text: "Lyrics not found")]
+                    self.lyricLines = []
+                    self.status = .notFound
                 }
                 return
             }
@@ -239,13 +259,15 @@ class LyricsService: ObservableObject {
                 } else {
                     Logger.info("No synced lyrics found in search results", category: "lyrics")
                     DispatchQueue.main.async {
-                        self.lyricLines = [LyricLine(timestamp: 0.0, text: "Synced lyrics not found")]
+                        self.lyricLines = []
+                        self.status = .notFound
                     }
                 }
             } catch {
                 Logger.error("Failed to decode search results", category: "lyrics", error: error)
                 DispatchQueue.main.async {
-                    self.lyricLines = [LyricLine(timestamp: 0.0, text: "Lyrics parsing error")]
+                    self.lyricLines = []
+                    self.status = .error
                 }
             }
         }.resume()
@@ -260,10 +282,12 @@ class LyricsService: ObservableObject {
             DispatchQueue.main.async {
                 self.isFetching = false
                 if parsedLines.isEmpty {
-                    self.lyricLines = [LyricLine(timestamp: 0.0, text: "No synced lyrics available")]
+                    self.lyricLines = []
+                    self.status = .notFound
                     Logger.info("⚠️ Parsed 0 lines from synced lyrics content", category: "lyrics")
                 } else {
                     self.lyricLines = parsedLines
+                    self.status = .found
                     Logger.info("✅ Loaded \(parsedLines.count) lyric lines for \(track.title)", category: "lyrics")
                     // Save to local cache
                     let cachedLines = parsedLines.map { CachedLyricLine(timestamp: $0.timestamp, text: $0.text, romanized: $0.romanized) }
@@ -277,7 +301,8 @@ class LyricsService: ObservableObject {
             Logger.error("Failed to decode LRCLIB response", category: "lyrics", error: error)
             DispatchQueue.main.async {
                 self.isFetching = false
-                self.lyricLines = [LyricLine(timestamp: 0.0, text: "Failed to parse lyrics")]
+                self.lyricLines = []
+                self.status = .error
             }
         }
     }

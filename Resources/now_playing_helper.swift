@@ -4,9 +4,11 @@
 //
 // Writes one JSON object per line to stdout, polled by the parent process.
 import Foundation
+import AppKit
 
 typealias GetInfoFn = @convention(c) (DispatchQueue, @escaping ([String: Any]) -> Void) -> Void
 typealias GetIsPlayingFn = @convention(c) (DispatchQueue, @escaping (Bool) -> Void) -> Void
+typealias GetPIDFn = @convention(c) (DispatchQueue, @escaping (Int32) -> Void) -> Void
 
 let frameworkURL = URL(fileURLWithPath: "/System/Library/PrivateFrameworks/MediaRemote.framework")
 guard let bundle = CFBundleCreate(kCFAllocatorDefault, frameworkURL as CFURL),
@@ -18,6 +20,11 @@ guard let bundle = CFBundleCreate(kCFAllocatorDefault, frameworkURL as CFURL),
 
 let getInfo = unsafeBitCast(infoPtr, to: GetInfoFn.self)
 let getIsPlaying = unsafeBitCast(playingPtr, to: GetIsPlayingFn.self)
+// Identifies which app owns the Now Playing session so the parent can restrict
+// playback to YouTube sources only. Absent on some macOS builds — we just omit
+// bundleId then and the parent falls back to its default acceptance.
+let getPID: GetPIDFn? = CFBundleGetFunctionPointerForName(bundle, "MRMediaRemoteGetNowPlayingApplicationPID" as CFString)
+    .map { unsafeBitCast($0, to: GetPIDFn.self) }
 let workQueue = DispatchQueue(label: "np.helper", qos: .userInitiated)
 
 func emit(_ dict: [String: Any]) {
@@ -43,7 +50,14 @@ func poll() {
         }
         getIsPlaying(workQueue) { isPlaying in
             dict["isPlaying"] = isPlaying
-            emit(dict)
+            guard let getPID = getPID else { emit(dict); return }
+            getPID(workQueue) { pid in
+                if pid > 0, let app = NSRunningApplication(processIdentifier: pid),
+                   let bid = app.bundleIdentifier {
+                    dict["bundleId"] = bid
+                }
+                emit(dict)
+            }
         }
     }
 }

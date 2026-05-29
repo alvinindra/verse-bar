@@ -213,7 +213,20 @@ class StatusItemManager: NSObject {
             }
         }
         
-        // 2. If no lyrics line showing, build title/artist
+        // 2. If lyrics are enabled but this track has no synced lyrics, show
+        //    only the icon — the "not found" message lives in the popup, not
+        //    the menu bar.
+        if displayString.isEmpty && settings.showLyrics {
+            switch lyricsService.status {
+            case .notFound, .unavailableOffline, .error:
+                button.title = ""
+                return
+            default:
+                break
+            }
+        }
+
+        // 3. If no lyrics line showing, build title/artist
         if displayString.isEmpty {
             var elements: [String] = []
             if settings.showTitle {

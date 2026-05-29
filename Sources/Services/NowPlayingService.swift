@@ -8,6 +8,9 @@ struct NowPlayingInfo {
     let isPaused: Bool
     let artworkData: Data?
     let artworkId: String?
+    /// Bundle id of the app that owns the Now Playing session (e.g. a browser
+    /// or YTM Desktop). nil when the helper couldn't resolve it.
+    let bundleIdentifier: String?
 }
 
 /// Browser-agnostic source backed by the macOS Now Playing system (MediaRemote).
@@ -149,7 +152,8 @@ final class NowPlayingService {
             elapsed: elapsed,
             isPaused: !isPlaying,
             artworkData: artworkData,
-            artworkId: artworkId
+            artworkId: artworkId,
+            bundleIdentifier: dict["bundleId"] as? String
         )
     }
 }
